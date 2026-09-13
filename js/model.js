@@ -13,18 +13,18 @@ const Model = (() => {
     return { id: "root", text: "", children: [] };
   }
 
-  // 返回 { node, parent, index }，未找到返回 null
+  // 返回 { node, parent, index, depth }（顶层节点 depth 为 1），未找到返回 null
   function find(root, id) {
     let result = null;
-    (function dfs(node) {
+    (function dfs(node, depth) {
       if (result) return;
       const idx = node.children.findIndex((c) => c.id === id);
       if (idx !== -1) {
-        result = { node: node.children[idx], parent: node, index: idx };
+        result = { node: node.children[idx], parent: node, index: idx, depth: depth + 1 };
         return;
       }
-      node.children.forEach(dfs);
-    })(root);
+      node.children.forEach((c) => dfs(c, depth + 1));
+    })(root, 0);
     return result;
   }
 

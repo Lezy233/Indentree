@@ -9,34 +9,55 @@
 <body>
 <header>
   <h1>Indentree</h1>
-  <nav class="tabs">
-    <button class="tab active" data-view="markdown">Markdown</button>
-    <button class="tab" data-view="outline">图形化大纲</button>
-    <button class="tab" data-view="tree">树形图</button>
-  </nav>
+  <div class="header-controls">
+    <button id="layout-toggle" class="ctrl-btn" title="切换横向/纵向布局">纵向布局</button>
+    <button id="theme-toggle" class="ctrl-btn" title="切换明暗主题">深色模式</button>
+  </div>
 </header>
-<main>
-  <section id="view-markdown" class="view active">
-    <div class="toolbar">
-      <span class="hint">支持多级标题（# ~ ######）与多级无序列表（- / *），列表按缩进分层</span>
-      <button class="copy-btn" data-copy="markdown">复制</button>
+<main class="panes horizontal" id="panes">
+  <section class="pane" id="pane-markdown">
+    <div class="pane-header">
+      <h2>Markdown</h2>
+      <div class="pane-tools">
+        <label class="chk" title="vim 按键模式"><input type="checkbox" id="vim-toggle"> Vim</label>
+        <span id="vim-mode" hidden>NORMAL</span>
+        <div class="seg" id="md-mode" title="缩进表示方式">
+          <button data-mode="heading" class="active"># 标题</button>
+          <button data-mode="list">- 列表</button>
+        </div>
+        <select id="md-marker" hidden title="列表符号">
+          <option value="-">无序</option>
+          <option value="1.">有序</option>
+        </select>
+        <button class="copy-btn" data-copy="markdown">复制</button>
+      </div>
     </div>
     <textarea id="markdown-editor" spellcheck="false"></textarea>
   </section>
 
-  <section id="view-outline" class="view">
-    <div class="toolbar">
-      <span class="hint">拖动 ⠿ 手柄排序或改变层级；Enter 新建条目，Tab / Shift+Tab 调整层级，空条目按 Backspace 删除</span>
-      <button class="copy-btn" data-copy="outline">复制为 Markdown</button>
+  <div class="splitter" data-index="0"></div>
+
+  <section class="pane" id="pane-outline">
+    <div class="pane-header">
+      <h2>图形化大纲</h2>
+      <div class="pane-tools">
+        <button class="copy-btn" data-copy="outline">复制为 Markdown</button>
+      </div>
     </div>
+    <div class="pane-hint">拖动 ⠿ 手柄排序或改变层级（整行高亮放下即成为子级）；勾选或用鼠标框选多条目后，可批量左移 / 右移 / 统一层级</div>
     <div id="outline-editor"></div>
   </section>
 
-  <section id="view-tree" class="view">
-    <div class="toolbar">
-      <label>缩进空格数 <input type="number" id="tree-indent" min="2" max="12" value="4"></label>
-      <label>级间空行数 <input type="number" id="tree-gap" min="0" max="5" value="0"></label>
-      <button class="copy-btn" data-copy="tree">复制</button>
+  <div class="splitter" data-index="1"></div>
+
+  <section class="pane" id="pane-tree">
+    <div class="pane-header">
+      <h2>树形图</h2>
+      <div class="pane-tools">
+        <label>缩进 <input type="number" id="tree-indent" min="2" max="12" value="4"></label>
+        <label>空行 <input type="number" id="tree-gap" min="0" max="5" value="0"></label>
+        <button class="copy-btn" data-copy="tree">复制</button>
+      </div>
     </div>
     <textarea id="tree-editor" spellcheck="false"></textarea>
   </section>
@@ -44,6 +65,7 @@
 <script src="js/model.js"></script>
 <script src="js/markdown.js"></script>
 <script src="js/tree.js"></script>
+<script src="js/vim.js"></script>
 <script src="js/outline.js"></script>
 <script src="js/app.js"></script>
 </body>
