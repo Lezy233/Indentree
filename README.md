@@ -9,8 +9,8 @@ Indentree
 
 ## 使用
 
-直接登录网站 [Indentree]()
+**开箱即用：[Indentree](https://lezy233.github.io/Indentree/)**
 
-## 功能
+<!-- ## 功能
 
-### 
+###  -->
