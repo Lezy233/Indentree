@@ -1,0 +1,243 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #f6f7f9;
+  color: #24292f;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e1e4e8;
+}
+
+header h1 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tab {
+  padding: 6px 16px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  cursor: pointer;
+  color: #57606a;
+}
+
+.tab:hover {
+  background: #f0f1f3;
+}
+
+.tab.active {
+  background: #0969da;
+  color: #fff;
+}
+
+main {
+  max-width: 960px;
+  margin: 20px auto;
+  padding: 0 16px;
+}
+
+.view {
+  display: none;
+}
+
+.view.active {
+  display: block;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.hint {
+  font-size: 12px;
+  color: #8b949e;
+  flex: 1;
+}
+
+.toolbar label {
+  font-size: 13px;
+  color: #57606a;
+}
+
+.toolbar input[type="number"] {
+  width: 56px;
+  padding: 4px 6px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.copy-btn {
+  padding: 5px 14px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.copy-btn:hover {
+  background: #f0f1f3;
+}
+
+.copy-btn.copied {
+  border-color: #1a7f37;
+  color: #1a7f37;
+}
+
+textarea {
+  width: 100%;
+  min-height: 60vh;
+  padding: 14px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  background: #fff;
+  font-family: "SF Mono", Consolas, "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  white-space: pre;
+}
+
+textarea:focus {
+  outline: 2px solid #0969da33;
+  border-color: #0969da;
+}
+
+/* 图形化大纲 */
+#outline-editor {
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 60vh;
+}
+
+.node-children {
+  margin-left: 26px;
+  border-left: 1px dashed #e1e4e8;
+  padding-left: 6px;
+}
+
+.node-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  position: relative;
+}
+
+.node-row:hover {
+  background: #f6f8fa;
+}
+
+.drag-handle {
+  cursor: grab;
+  color: #8b949e;
+  user-select: none;
+  padding: 0 4px;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.node-row input[type="text"] {
+  flex: 1;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 14px;
+  background: transparent;
+}
+
+.node-row input[type="text"]:focus {
+  outline: none;
+  border-color: #0969da;
+  background: #fff;
+}
+
+.del-btn {
+  border: none;
+  background: transparent;
+  color: #b0b7bf;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 6px;
+  visibility: hidden;
+}
+
+.node-row:hover .del-btn {
+  visibility: visible;
+}
+
+.del-btn:hover {
+  color: #cf222e;
+}
+
+/* 拖拽指示 */
+.node-row.drag-before::before,
+.node-row.drag-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #0969da;
+}
+
+.node-row.drag-before::before {
+  top: -1px;
+}
+
+.node-row.drag-after::after {
+  bottom: -1px;
+}
+
+.node-row.drag-into {
+  outline: 2px solid #0969da;
+  background: #ddf4ff;
+}
+
+.node.dragging > .node-row {
+  opacity: 0.4;
+}
+
+.add-root-btn {
+  margin-top: 8px;
+  padding: 5px 14px;
+  border: 1px dashed #d0d7de;
+  border-radius: 6px;
+  background: transparent;
+  color: #57606a;
+  font-size: 13px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.add-root-btn:hover {
+  background: #f6f8fa;
+  color: #24292f;
+}

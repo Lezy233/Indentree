@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Indentree — 层级大纲编辑器</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header>
+  <h1>Indentree</h1>
+  <nav class="tabs">
+    <button class="tab active" data-view="markdown">Markdown</button>
+    <button class="tab" data-view="outline">图形化大纲</button>
+    <button class="tab" data-view="tree">树形图</button>
+  </nav>
+</header>
+<main>
+  <section id="view-markdown" class="view active">
+    <div class="toolbar">
+      <span class="hint">支持多级标题（# ~ ######）与多级无序列表（- / *），列表按缩进分层</span>
+      <button class="copy-btn" data-copy="markdown">复制</button>
+    </div>
+    <textarea id="markdown-editor" spellcheck="false"></textarea>
+  </section>
+
+  <section id="view-outline" class="view">
+    <div class="toolbar">
+      <span class="hint">拖动 ⠿ 手柄排序或改变层级；Enter 新建条目，Tab / Shift+Tab 调整层级，空条目按 Backspace 删除</span>
+      <button class="copy-btn" data-copy="outline">复制为 Markdown</button>
+    </div>
+    <div id="outline-editor"></div>
+  </section>
+
+  <section id="view-tree" class="view">
+    <div class="toolbar">
+      <label>缩进空格数 <input type="number" id="tree-indent" min="2" max="12" value="4"></label>
+      <label>级间空行数 <input type="number" id="tree-gap" min="0" max="5" value="0"></label>
+      <button class="copy-btn" data-copy="tree">复制</button>
+    </div>
+    <textarea id="tree-editor" spellcheck="false"></textarea>
+  </section>
+</main>
+<script src="js/model.js"></script>
+<script src="js/markdown.js"></script>
+<script src="js/tree.js"></script>
+<script src="js/outline.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
