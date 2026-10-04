@@ -74,6 +74,33 @@ test('混合写法：顶层段落作为 paragraph 节点保留', () => {
   ]);
 });
 
+test('列表嵌套映射：空的嵌套列表项不被误判为 setext 标题', () => {
+  // `- X` 后跟缩进的 `- `（空项）：CommonMark 会把虚线当 setext 下划线，
+  // 但本工具中用户意图是嵌套空列表项（setext '=' 写法不受影响，仍是标题）
+  const tree = parseMarkdown(['- `code`', '    - ', ''].join('\n'));
+  assert.deepEqual(flatten(tree), [
+    [0, 'list-item', '`code`'],
+    [1, 'list-item', ''],
+  ]);
+});
+
+test('列表嵌套映射：空嵌套项与有内容兄弟共存', () => {
+  const tree = parseMarkdown(['- `code`', '    - ', '    - B', ''].join('\n'));
+  assert.deepEqual(flatten(tree), [
+    [0, 'list-item', '`code`'],
+    [1, 'list-item', ''],
+    [1, 'list-item', 'B'],
+  ]);
+});
+
+test('setext 等号线在列表中仍解析为标题', () => {
+  const tree = parseMarkdown(['- Title', '  ===', ''].join('\n'));
+  assert.deepEqual(flatten(tree), [
+    [0, 'list-item', ''],
+    [1, 'heading', 'Title'],
+  ]);
+});
+
 test('行内保真：节点文本原样保留行内 Markdown', () => {
   const tree = parseMarkdown(['# 带 **粗体** 的标题', '', '- 一个 [链接](https://example.com) 和 `代码`'].join('\n'));
   assert.deepEqual(flatten(tree), [

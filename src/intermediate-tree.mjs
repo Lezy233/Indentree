@@ -46,6 +46,7 @@ export function parseMarkdown(src, parser = md) {
   };
 
   let pendingHeadingLevel = null;
+  let pendingHeadingMarkup = null;
   let paragraphMode = null; // 'standalone' | 'item'
   let skipUntil = null; // e.g. 'table_close'
 
@@ -59,10 +60,12 @@ export function parseMarkdown(src, parser = md) {
     switch (token.type) {
       case 'heading_open': {
         pendingHeadingLevel = Number(token.tag.slice(1));
+        pendingHeadingMarkup = token.markup; // ATX 为 '#'，setext 为 '-' 或 '='
         break;
       }
       case 'heading_close': {
         pendingHeadingLevel = null;
+        pendingHeadingMarkup = null;
         break;
       }
       case 'bullet_list_open':
@@ -94,6 +97,14 @@ export function parseMarkdown(src, parser = md) {
       case 'inline': {
         const text = token.content;
         if (pendingHeadingLevel !== null) {
+          const parent = currentParent();
+          // setext 虚嵌套：列表项内 `- X` 后跟缩进虚线（空项）时，CommonMark 判为
+          // setext h2，但本工具中用户意图是「X 项 + 嵌套空项」，按意图还原
+          if (pendingHeadingMarkup === '-' && parent.kind === 'list-item' && parent.text === '') {
+            parent.text = text;
+            parent.children.push({ kind: 'list-item', text: '', children: [] });
+            break;
+          }
           const node = { kind: 'heading', text, level: pendingHeadingLevel, children: [] };
           while (
             headingStack.length > 0 &&

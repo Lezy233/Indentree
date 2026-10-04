@@ -78,6 +78,17 @@
       outline: 1px solid var(--error-outline);
       z-index: 20;
     }
+    /* 暗色主题编辑器配色（参考 One Dark Pro）：
+       当前行 #2c313a 微亮、选中区 #3e4451 明显区分、光标 #528bff 品牌蓝 */
+    .ace-github-dark .ace_active-line {
+      background: #2c313a !important;
+    }
+    .ace-github-dark .ace_selection {
+      background: #3e4451 !important;
+    }
+    .ace-github-dark .ace_cursor {
+      color: #528bff !important;
+    }
     /* 树形图面板：标题栏 + 抽屉 + 渲染区 */
     .tree-panel {
       display: flex;
@@ -295,6 +306,56 @@
     };
     editor.on('changeStatus', updateVimMode);
     updateVimMode();
+
+    // vim Esc 兜底：某些环境（中文 IME、嵌入容器）会吞掉 textarea 上的
+    // Escape / Ctrl+[；在捕获阶段直接喂给 vim handler。
+    // 若 ace 自己也能处理，重复退出普通模式是无害空操作。
+    editor.container.addEventListener(
+      'keydown',
+      (e) => {
+        const isEsc = e.key === 'Escape';
+        const isCtrlBracket = e.key === '[' && e.ctrlKey;
+        if (!isEsc && !isCtrlBracket) return;
+        const handler = editor.keyBinding.$handlers?.[editor.keyBinding.$handlers.length - 1];
+        const vim = editor.state?.cm?.state?.vim;
+        if (!handler?.handleKeyboard || !vim) return;
+        if (!vim.insertMode && !vim.visualMode) return; // 仅在插入/可视模式兜底
+        handler.handleKeyboard({ editor }, 0, 'esc', 27, e);
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      true,
+    );
+
+    // 宽字符 block 光标：ace 的光标层定位已按全角计 2 列，但块宽固定 1 字符，
+    // 光标落在汉字/全角符号上时只盖住一半。每次光标渲染后按字符实测宽度修正。
+    const WIDE_CHAR =
+      /[ᄀ-ᅟ⺀-〾぀-ヿ㐀-䶿一-鿿ꥠ-꥿가-힯豈-﫿︰-﹏＀-｠￠-￦]/;
+    const fixWideCursor = () => {
+      const vim = editor.state?.cm?.state?.vim;
+      if (vim?.insertMode) return; // 插入模式是细光标，无需处理
+      const pos = editor.getCursorPosition();
+      const line = editor.session.getLine(pos.row) ?? '';
+      const ch = line.charAt(pos.column);
+      const cp = line.codePointAt(pos.column);
+      const wide = ch !== '' && (cp > 0xffff || WIDE_CHAR.test(ch));
+      const width = `${editor.renderer.characterWidth * (wide ? 2 : 1)}px`;
+      editor.container.querySelectorAll('.ace_cursor-layer .ace_cursor').forEach((c) => {
+        if (c.style.width !== width) c.style.width = width;
+      });
+    };
+    // MutationObserver：光标层每次重绘后同步修正宽度（微任务在渲染前执行，不依赖 rAF）
+    const cursorLayer = editor.container.querySelector('.ace_cursor-layer');
+    if (cursorLayer) {
+      new MutationObserver(fixWideCursor).observe(cursorLayer, {
+        attributes: true,
+        attributeFilter: ['style'],
+        subtree: true,
+      });
+    }
+    // 选择变更时立即修正一次（渲染前先行设置，重绘后由 observer 兜底）
+    editor.on('changeSelection', fixWideCursor);
+    editor.on('changeStatus', fixWideCursor);
 
     // 跨视图编辑后的 Ace 重建：按行号恢复光标，撤销栈清空为已接受代价
     const rebuildEditor = (text) => {
