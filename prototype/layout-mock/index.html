@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — THROWAWAY. 不是 production 代码。
+  "Three variants of the Indentree main screen, switchable via ?variant= (A/B/C),
+   static throwaway mock (no build, no framework)."
+  A — 经典双栏（左编辑右树，品类主流）  B — 三栏工作台（三视图同屏）  C — 单栏聚焦（分段切换）
+  VERDICT: B 胜出（宽屏）+ C 胜出（窄屏 <720px 自动切换）。B 采用 VSCode 式面板：
+  分栏间留间距，⋮ 握把分隔条拖拽调宽，推到底自动收起，经侧边图标或反向拖拽恢复。A 被否决。
+-->
+<html lang="zh-CN" data-theme="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Indentree — 布局原型</title>
+<style>
+/* ============ 共享底座（切换器 + 变量 + 主题；与 variant 无关） ============ */
+:root{
+  --bg:#ffffff; --bg-panel:#f6f7f9; --bg-inset:#eef0f3; --border:#d9dde3;
+  --fg:#1f2329; --fg-dim:#6b7280; --accent:#2563eb; --danger:#dc2626;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#14161a; --bg-panel:#1c1f26; --bg-inset:#111318; --border:#2c313a;
+    --fg:#e6e8ec; --fg-dim:#8b93a1; --accent:#4f8cff; --danger:#f87171;
+  }
+}
+html[data-theme="light"]{
+  --bg:#ffffff; --bg-panel:#f6f7f9; --bg-inset:#eef0f3; --border:#d9dde3;
+  --fg:#1f2329; --fg-dim:#6b7280; --accent:#2563eb; --danger:#dc2626;
+}
+html[data-theme="dark"]{
+  --bg:#14161a; --bg-panel:#1c1f26; --bg-inset:#111318; --border:#2c313a;
+  --fg:#e6e8ec; --fg-dim:#8b93a1; --accent:#4f8cff; --danger:#f87171;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);height:100vh;overflow:hidden}
+button{font-family:inherit;cursor:pointer;border:1px solid var(--border);background:var(--bg-panel);
+  color:var(--fg);border-radius:6px;padding:4px 10px;font-size:13px}
+button:hover{border-color:var(--accent)}
+.mono{font-family:var(--mono)}
+
+/* 浮动切换器（prototype 专用，非被评估对象） */
+#switcher{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:999;
+  display:flex;align-items:center;gap:10px;background:#111;color:#fff;
+  border-radius:999px;padding:8px 14px;box-shadow:0 6px 24px rgba(0,0,0,.4);font-size:13px}
+#switcher button{background:#2a2f38;border-color:#3a4150;color:#fff;border-radius:999px;
+  width:28px;height:28px;padding:0;font-size:14px;line-height:1}
+#switcher .label{font-variant-numeric:tabular-nums;min-width:170px;text-align:center}
+
+/* 注解气泡（标注 mock 的设计意图，非 UI 一部分） */
+.note{position:absolute;background:var(--accent);color:#fff;font-size:11px;line-height:1.4;
+  padding:3px 8px;border-radius:8px 8px 8px 2px;opacity:.92;pointer-events:none;z-index:50;white-space:nowrap}
+</style>
+
+<!-- ================= Variant A 样式：经典双栏 ================= -->
+<style>
+#va{display:none;height:100vh;flex-direction:column}
+#va.on{display:flex}
+#va .topbar{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg-panel)}
+#va .topbar .logo{font-weight:700}
+#va .topbar .seg{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+#va .topbar .seg button{border:none;border-radius:0;background:transparent;padding:4px 12px}
+#va .topbar .seg button.cur{background:var(--accent);color:#fff}
+#va .topbar .sp{flex:1}
+#va .main{flex:1;display:flex;min-height:0}
+#va .left{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--border)}
+#va .editor{flex:1;width:100%;border:none;resize:none;background:var(--bg-inset);color:var(--fg);
+  font-family:var(--mono);font-size:14px;line-height:1.7;padding:14px 14px 14px 46px;outline:none}
+#va .vimbar{display:flex;gap:14px;padding:5px 14px;border-top:1px solid var(--border);
+  background:var(--bg-panel);font-family:var(--mono);font-size:12px;color:var(--fg-dim)}
+#va .vimbar .mode{background:var(--accent);color:#fff;border-radius:4px;padding:0 8px;font-weight:700}
+#va .vimbar .err{color:var(--danger)}
+#va .right{width:42%;display:flex;flex-direction:column;min-width:300px;background:var(--bg)}
+#va .treehead{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);font-size:13px;color:var(--fg-dim)}
+#va .treehead .sp{flex:1}
+#va .treebody{flex:1;overflow:auto;padding:16px;font-family:var(--mono);font-size:14px;line-height:1.8;white-space:pre}
+/* 大纲态（左栏切换到“大纲”时的静态示意） */
+#va .outline{display:none;flex:1;overflow:auto;padding:10px 0}
+#va.left-outline .outline{display:block}
+#va.left-outline .editor-wrap{display:none}
+#va .orow{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:14px}
+#va .orow:hover{background:var(--bg-panel)}
+#va .orow .grip{color:var(--fg-dim);cursor:grab;letter-spacing:-2px}
+#va .orow input{accent-color:var(--accent)}
+#va .orow .depth2{padding-left:28px}
+#va .orow .depth3{padding-left:56px}
+#va .multibar{position:absolute;top:64px;left:24%;transform:translateX(-50%);display:none;
+  background:var(--bg-panel);border:1px solid var(--border);border-radius:8px;padding:6px 10px;
+  gap:8px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:60;font-size:13px}
+#va .multibar.on{display:flex}
+#va .multibar .cnt{color:var(--accent);font-weight:700;padding:0 6px}
+/* 设置抽屉（二级界面） */
+#va .drawer{position:fixed;top:0;right:-340px;width:320px;height:100vh;background:var(--bg-panel);
+  border-left:1px solid var(--border);transition:right .2s;z-index:80;padding:18px;overflow:auto}
+#va .drawer.on{right:0}
+#va .drawer h3{font-size:14px;margin-bottom:14px}
+#va .drawer .fld{margin-bottom:12px}
+#va .drawer .fld label{display:block;font-size:12px;color:var(--fg-dim);margin-bottom:4px}
+#va .drawer .fld input{width:100%;font-family:var(--mono);padding:6px 8px;border:1px solid var(--border);
+  border-radius:6px;background:var(--bg-inset);color:var(--fg)}
+</style>
+
+<!-- ================= Variant B 样式：三栏工作台（VSCode 式面板收放） ================= -->
+<style>
+#vb{display:none;height:100vh;flex-direction:column}
+#vb.on{display:flex}
+#vb .topbar{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg-panel)}
+#vb .topbar .logo{font-weight:700}
+#vb .topbar .sp{flex:1}
+#vb .panels{flex:1;display:flex;min-height:0;padding:8px;position:relative}
+#vb .col{display:flex;flex-direction:column;min-height:0;background:var(--bg-panel);
+  border:1px solid var(--border);border-radius:10px;overflow:hidden;flex:none}
+#vb .col.center{flex:1;min-width:0}
+#vb #vb-left{width:240px}
+#vb #vb-right{width:280px}
+#vb .col.collapsed{width:0!important;border:none}
+#vb .colhead{padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;color:var(--fg-dim);
+  display:flex;align-items:center;gap:8px}
+#vb .colhead .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+#vb .body{flex:1;overflow:auto}
+#vb .editor{width:100%;height:100%;border:none;resize:none;background:transparent;color:var(--fg);
+  font-family:var(--mono);font-size:13px;line-height:1.7;padding:14px;outline:none}
+#vb .tree{padding:14px;font-family:var(--mono);font-size:13px;line-height:1.8;white-space:pre}
+#vb .orow{padding:5px 10px;font-size:13px;display:flex;gap:8px;align-items:center}
+#vb .orow:hover{background:var(--bg-inset)}
+#vb .orow .grip{color:var(--fg-dim);letter-spacing:-2px}
+#vb .orow .d2{padding-left:22px}#vb .orow .d3{padding-left:44px}
+#vb .vimline{padding:4px 12px;border-top:1px solid var(--border);font-family:var(--mono);
+  font-size:11px;color:var(--fg-dim);display:flex;gap:12px}
+#vb .vimline .mode{color:var(--accent);font-weight:700}
+/* ⋮ 握把分隔条 */
+#vb .gutter{width:12px;cursor:col-resize;position:relative;display:flex;align-items:center;
+  justify-content:center;flex:none;touch-action:none}
+#vb .gutter::before{content:'';position:absolute;top:0;bottom:0;left:5px;width:2px;
+  background:transparent;border-radius:1px;transition:background .15s}
+#vb .gutter:hover::before{background:var(--accent)}
+#vb .gutter span{color:var(--fg-dim);font-size:11px;user-select:none;pointer-events:none;
+  background:var(--bg);padding:3px 0;border-radius:4px}
+/* 收起态：分隔条变成可反向拖拽的边缘条 */
+#vb .gutter.collapsed{width:16px;cursor:ew-resize}
+#vb .gutter.collapsed span{display:none}
+#vb .gutter.collapsed::before{left:7px;background:var(--border)}
+#vb .gutter.collapsed:hover::before{background:var(--accent)}
+/* 侧边恢复图标（VSCode 式） */
+#vb .reopen{position:absolute;top:50%;transform:translateY(-50%);z-index:40;display:none;
+  align-items:center;gap:4px;background:var(--bg-panel);border:1px solid var(--border);
+  padding:12px 4px;font-size:11px;color:var(--fg-dim);cursor:pointer;writing-mode:vertical-rl;
+  letter-spacing:2px}
+#vb .reopen.left{left:0;border-left:none;border-radius:0 8px 8px 0}
+#vb .reopen.right{right:0;border-right:none;border-radius:8px 0 0 8px}
+#vb .reopen.on{display:flex}
+#vb .reopen:hover{color:var(--accent);border-color:var(--accent)}
+</style>
+
+<!-- ================= Variant C 样式：单栏聚焦 ================= -->
+<style>
+#vc{display:none;height:100vh;flex-direction:column;align-items:center}
+#vc.on{display:flex}
+#vc .switch{display:flex;gap:4px;margin:22px 0 14px;background:var(--bg-panel);
+  border:1px solid var(--border);border-radius:10px;padding:4px}
+#vc .switch button{border:none;background:transparent;border-radius:7px;padding:8px 26px;font-size:14px}
+#vc .switch button.cur{background:var(--accent);color:#fff}
+#vc .stage{width:min(860px,92vw);flex:1;display:flex;flex-direction:column;min-height:0;margin-bottom:16px}
+#vc .surface{flex:1;background:var(--bg-panel);border:1px solid var(--border);border-radius:14px;
+  overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.12)}
+#vc .editor{flex:1;width:100%;border:none;resize:none;background:transparent;color:var(--fg);
+  font-family:var(--mono);font-size:15px;line-height:1.9;padding:22px;outline:none}
+#vc .tree{padding:22px;font-family:var(--mono);font-size:15px;line-height:2;white-space:pre;flex:1;overflow:auto}
+#vc .outl{flex:1;overflow:auto;padding:10px 0}
+#vc .orow{padding:8px 20px;font-size:15px;display:flex;gap:10px;align-items:center}
+#vc .orow:hover{background:var(--bg-inset)}
+#vc .orow .grip{color:var(--fg-dim);letter-spacing:-2px}
+#vc .status{width:min(860px,92vw);display:flex;gap:16px;padding:6px 4px;font-size:12px;
+  color:var(--fg-dim);font-family:var(--mono)}
+#vc .status .err{color:var(--danger)}
+#vc .side{position:fixed;right:0;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;
+  gap:6px;padding:6px;background:var(--bg-panel);border:1px solid var(--border);border-right:none;
+  border-radius:10px 0 0 10px}
+#vc .side button{border:none;background:transparent;font-size:12px;padding:6px 4px;writing-mode:vertical-rl;color:var(--fg-dim)}
+#vc .side button.cur{color:var(--accent);font-weight:700}
+/* 真实响应式：视口 <720px 时 B 自动隐藏、C 接管（与 variant 参数无关） */
+@media (max-width:720px){
+  #vb.on{display:none}
+  #vc{display:flex}
+  #vc .side{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= Variant A：经典双栏 ================= -->
+<div id="va" class="on">
+  <div class="topbar">
+    <span class="logo">🌲 Indentree</span>
+    <div class="seg" id="va-seg">
+      <button class="cur" data-view="md">Markdown</button>
+      <button data-view="outline">大纲</button>
+    </div>
+    <button title="分支样式预设（示意）">分支样式 ▾</button>
+    <span class="sp"></span>
+    <button onclick="toggleTheme()" title="主题切换">🌓</button>
+  </div>
+  <div class="main">
+    <div class="left" id="va-left">
+      <div class="editor-wrap" style="flex:1;display:flex;min-height:0;position:relative">
+        <textarea class="editor" spellcheck="false"># Indentree
+
+- src
+  - main.js
+  - parser.js
+    - parse()
+- docs
+  - ADR-0001
+!!! 这一行无法解析（mock：演示行级标红）</textarea>
+        <span class="note" style="top:12px;right:12px">Ace 占位（vim 模式开启）</span>
+      </div>
+      <div class="outline">
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox"><span>Indentree</span></div>
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox"><span class="depth2">src</span></div>
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox" checked><span class="depth3">main.js</span></div>
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox" checked><span class="depth3">parser.js</span></div>
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox"><span class="depth2">docs</span></div>
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox"><span class="depth3">ADR-0001</span></div>
+      </div>
+      <div class="vimbar">
+        <span class="mode">NORMAL</span><span>行 7, 列 5</span><span>vim</span>
+        <span class="err">⚠ 第 8 行无法解析</span><span style="flex:1"></span><span>Markdown ⇄ 树 · 300ms 同步</span>
+      </div>
+    </div>
+    <div class="right">
+      <div class="treehead">树形图
+        <span class="sp"></span>
+        <button onclick="document.getElementById('va-drawer').classList.add('on')">⚙ 自定义</button>
+      </div>
+      <div class="treebody">Indentree
+├── src
+│   ├── main.js
+│   └── parser.js
+│       └── parse()
+├── docs
+│   └── ADR-0001
+└── README.md
+
+<span style="color:var(--fg-dim)">（mock 数据：右树实时跟随左文本）</span></div>
+    </div>
+  </div>
+  <div class="multibar on" id="va-multi"><span class="cnt">2 selected</span>
+    <button>⇥ 缩进</button><button>⇤ 取消缩进</button><button>🗑</button><button>⋯</button>
+  </div>
+  <div class="drawer" id="va-drawer">
+    <h3>树形图自定义 <button style="float:right" onclick="document.getElementById('va-drawer').classList.remove('on')">✕</button></h3>
+    <div class="fld"><label>中间分支（MidBranch）</label><input value="├──"></div>
+    <div class="fld"><label>末分支（LastBranch）</label><input value="└──"></div>
+    <div class="fld"><label>竖线（VLine）</label><input value="│"></div>
+    <div class="fld"><label>横线（HLine）</label><input value="─"></div>
+    <div class="fld"><label>预设</label>
+      <div style="display:flex;gap:6px">
+        <button>经典 ├──</button><button>单线 ├─</button><button>无框</button>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--fg-dim)">存 localStorage，可 URL 分享（mock 说明）</div>
+  </div>
+  <span class="note" style="top:52px;right:24px">设置抽屉 = 二级界面</span>
+</div>
+
+<!-- ================= Variant B：三栏工作台（VSCode 式面板收放） ================= -->
+<div id="vb">
+  <div class="topbar"><span class="logo">🌲 Indentree</span>
+    <span style="color:var(--fg-dim);font-size:12px">拖动 ⋮ 分隔条调宽 · 推到底自动收起 · 点边缘图标或反向拖拽恢复 · 窗口 &lt;720px 自动切单栏</span>
+    <span class="sp"></span><button>分支样式 ▾</button><button onclick="toggleTheme()">🌓</button></div>
+  <div class="panels">
+    <div class="col" id="vb-left">
+      <div class="colhead"><span class="dot"></span>大纲（结构操作）</div>
+      <div class="body">
+        <div class="orow"><span class="grip">⠿</span>Indentree</div>
+        <div class="orow"><span class="d2"></span><span class="grip">⠿</span>src</div>
+        <div class="orow"><span class="d3"></span><span class="grip">⠿</span>main.js</div>
+        <div class="orow"><span class="d3"></span><span class="grip">⠿</span>parser.js</div>
+        <div class="orow"><span class="d2"></span><span class="grip">⠿</span>docs</div>
+        <div class="orow"><span class="d3"></span><span class="grip">⠿</span>ADR-0001</div>
+        <div class="orow"><span class="d2"></span><span class="grip">⠿</span>README.md</div>
+      </div>
+    </div>
+    <div class="gutter" data-side="left"><span>⋮</span></div>
+    <div class="col center">
+      <div class="colhead"><span class="dot"></span>Markdown（文本编辑 · Ace + vim）</div>
+      <div class="body"><textarea class="editor" spellcheck="false"># Indentree
+
+- src
+  - main.js
+  - parser.js
+    - parse()
+- docs
+  - ADR-0001</textarea></div>
+      <div class="vimline"><span class="mode">NORMAL</span><span>行 4, 列 9</span><span style="flex:1"></span><span>✓ 解析正常</span></div>
+    </div>
+    <div class="gutter" data-side="right"><span>⋮</span></div>
+    <div class="col" id="vb-right">
+      <div class="colhead"><span class="dot"></span>树形图（预览）</div>
+      <div class="body"><div class="tree">Indentree
+├── src
+│   ├── main.js
+│   └── parser.js
+│       └── parse()
+├── docs
+│   └── ADR-0001
+└── README.md</div></div>
+    </div>
+    <div class="reopen left" id="vb-reopen-left">☰ 大纲</div>
+    <div class="reopen right" id="vb-reopen-right">🌲 树形图</div>
+  </div>
+</div>
+
+<!-- ================= Variant C：单栏聚焦 ================= -->
+<div id="vc">
+  <div class="switch" id="vc-seg">
+    <button data-view="outline" class="cur">大纲</button>
+    <button data-view="md">Markdown</button>
+    <button data-view="tree">树形图</button>
+  </div>
+  <div class="stage">
+    <div class="surface">
+      <div class="outl" id="vc-outline">
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox">Indentree</div>
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox">&nbsp;&nbsp;src</div>
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox">&nbsp;&nbsp;&nbsp;&nbsp;main.js</div>
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox">&nbsp;&nbsp;&nbsp;&nbsp;parser.js</div>
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox">&nbsp;&nbsp;docs</div>
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox">&nbsp;&nbsp;&nbsp;&nbsp;ADR-0001</div>
+        <div class="orow"><span class="grip">⠿</span><input type="checkbox">&nbsp;&nbsp;README.md</div>
+      </div>
+      <textarea class="editor" id="vc-md" style="display:none" spellcheck="false"># Indentree
+
+- src
+  - main.js
+  - parser.js</textarea>
+      <div class="tree" id="vc-tree" style="display:none">Indentree
+├── src
+│   ├── main.js
+│   └── parser.js
+└── docs</div>
+    </div>
+  </div>
+  <div class="status"><span>2 selected · 同父 ✓</span><span class="err">⚠ 第 8 行无法解析</span><span style="flex:1"></span><span>NORMAL · vim</span></div>
+  <div class="side">
+    <button class="cur">大纲</button><button>文本</button><button>树</button>
+  </div>
+</div>
+
+<!-- 浮动切换器 -->
+<div id="switcher">
+  <button onclick="go(-1)" title="上一个">←</button>
+  <span class="label" id="sw-label">A — 经典双栏</span>
+  <button onclick="go(1)" title="下一个">→</button>
+</div>
+
+<script>
+/* ===== prototype 专用切换逻辑 ===== */
+const KEYS=['A','B','C'];
+const NAMES={A:'A — 经典双栏',B:'B — 三栏工作台',C:'C — 单栏聚焦'};
+const IDS={A:'va',B:'vb',C:'vc'};
+function current(){
+  const v=new URLSearchParams(location.search).get('variant');
+  return KEYS.includes(v)?v:'A';
+}
+function apply(k){
+  KEYS.forEach(x=>document.getElementById(IDS[x]).classList.toggle('on',x===k));
+  document.getElementById('sw-label').textContent=NAMES[k];
+  const u=new URL(location);u.searchParams.set('variant',k);
+  history.replaceState(null,'',u);
+}
+function go(d){apply(KEYS[(KEYS.indexOf(current())+d+KEYS.length)%KEYS.length])}
+addEventListener('keydown',e=>{
+  if(/^(INPUT|TEXTAREA)$/.test(e.target.tagName)||e.target.isContentEditable)return;
+  if(e.key==='ArrowLeft')go(-1);if(e.key==='ArrowRight')go(1);
+});
+apply(current());
+
+/* ===== mock 内的轻交互（仅为评估布局，非功能实现） ===== */
+function toggleTheme(){
+  const h=document.documentElement;
+  const sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+  const cur=h.dataset.theme==='auto'?(sysDark?'dark':'light'):h.dataset.theme;
+  h.dataset.theme=cur==='dark'?'light':'dark';
+}
+document.querySelectorAll('#va-seg button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#va-seg button').forEach(x=>x.classList.toggle('cur',x===b));
+  document.getElementById('va-left').classList.toggle('left-outline',b.dataset.view==='outline');
+});
+document.querySelectorAll('#vc-seg button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#vc-seg button').forEach(x=>x.classList.toggle('cur',x===b));
+  const v=b.dataset.view;
+  document.getElementById('vc-outline').style.display=v==='outline'?'':'none';
+  document.getElementById('vc-md').style.display=v==='md'?'':'none';
+  document.getElementById('vc-tree').style.display=v==='tree'?'':'none';
+  document.querySelectorAll('#vc .side button').forEach(x=>x.classList.toggle('cur',
+    (v==='outline'&&x.textContent==='大纲')||(v==='md'&&x.textContent==='文本')||(v==='tree'&&x.textContent==='树')));
+});
+document.querySelectorAll('#vc .side button').forEach((b,i)=>b.onclick=()=>{
+  document.querySelectorAll('#vc-seg button')[i].click();
+});
+
+/* ===== B：VSCode 式面板收放（mock 内真实可拖） ===== */
+const VB_DEFAULT={left:240,right:280};
+function vbSetCollapsed(side,on){
+  const target=document.getElementById('vb-'+side);
+  const gutter=document.querySelector('#vb .gutter[data-side="'+side+'"]');
+  target.classList.toggle('collapsed',on);
+  gutter.classList.toggle('collapsed',on);
+  document.getElementById('vb-reopen-'+side).classList.toggle('on',on);
+}
+document.querySelectorAll('#vb .gutter').forEach(g=>{
+  const side=g.dataset.side;
+  const target=document.getElementById('vb-'+side);
+  g.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    const startX=e.clientX;
+    const startW=target.classList.contains('collapsed')
+      ? 0 : target.getBoundingClientRect().width;
+    let ended=false;
+    document.body.style.userSelect='none';
+    const move=ev=>{
+      const dx=ev.clientX-startX;
+      let w=side==='left'?startW+dx:startW-dx;
+      if(w<64){ vbSetCollapsed(side,true); }
+      else{
+        vbSetCollapsed(side,false);
+        target.style.width=Math.min(w,innerWidth*0.55)+'px';
+      }
+    };
+    const up=()=>{
+      if(ended)return; ended=true;
+      removeEventListener('pointermove',move);removeEventListener('pointerup',up);
+      document.body.style.userSelect='';
+      if(target.classList.contains('collapsed')){
+        target.dataset.last=target.dataset.last||VB_DEFAULT[side];
+      }else{
+        target.dataset.last=target.getBoundingClientRect().width;
+      }
+    };
+    addEventListener('pointermove',move);addEventListener('pointerup',up);
+  });
+});
+document.getElementById('vb-reopen-left').onclick=()=>{
+  vbSetCollapsed('left',false);
+  const t=document.getElementById('vb-left');
+  t.style.width=(t.dataset.last||VB_DEFAULT.left)+'px';
+};
+document.getElementById('vb-reopen-right').onclick=()=>{
+  vbSetCollapsed('right',false);
+  const t=document.getElementById('vb-right');
+  t.style.width=(t.dataset.last||VB_DEFAULT.right)+'px';
+};
+</script>
+</body>
+</html>
