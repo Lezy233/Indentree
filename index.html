@@ -6,57 +6,77 @@
   <title>Indentree</title>
   <style>
     * { box-sizing: border-box; }
+    :root {
+      --bg: #ffffff;
+      --fg: #1f2328;
+      --border: #ddd;
+      --border-soft: #eee;
+      --panel-bg: #fafafa;
+      --muted: #666;
+      --btn-bg: #fff;
+      --btn-hover: #f0f0f0;
+      --error-fg: #b91c1c;
+      --error-bg: rgba(220, 38, 38, 0.18);
+      --error-outline: rgba(220, 38, 38, 0.45);
+      --error-bar-bg: rgba(220, 38, 38, 0.08);
+    }
+    [data-theme="dark"] {
+      --bg: #0d1117;
+      --fg: #c9d1d9;
+      --border: #30363d;
+      --border-soft: #21262d;
+      --panel-bg: #161b22;
+      --muted: #8b949e;
+      --btn-bg: #21262d;
+      --btn-hover: #30363d;
+      --error-fg: #f87171;
+      --error-bg: rgba(248, 81, 73, 0.25);
+      --error-outline: rgba(248, 81, 73, 0.5);
+      --error-bar-bg: rgba(248, 81, 73, 0.12);
+    }
     html, body { height: 100%; margin: 0; }
     body {
       font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
       display: flex;
       flex-direction: column;
+      background: var(--bg);
+      color: var(--fg);
     }
     header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       padding: 8px 16px;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid var(--border);
       font-weight: 600;
     }
+    #theme-toggle {
+      border: 1px solid var(--border);
+      background: var(--btn-bg);
+      color: var(--fg);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 400;
+      padding: 2px 10px;
+      border-radius: 4px;
+    }
+    #theme-toggle:hover { background: var(--btn-hover); }
     main {
       flex: 1;
       display: grid;
       grid-template-columns: 1fr 1fr;
       min-height: 0;
     }
-    /* 编辑器容器：backdrop 在底层渲染行级标红，textarea 透明叠加其上 */
-    .editor {
-      position: relative;
-      border-right: 1px solid #ddd;
-      min-height: 0;
-    }
-    .backdrop, #markdown-input {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 14px;
-      line-height: 1.6;
-      padding: 12px;
-      white-space: pre-wrap;
-      overflow-wrap: break-word;
-    }
-    .backdrop {
-      position: absolute;
-      inset: 0;
-      overflow: hidden;
-      pointer-events: none;
-      color: transparent;
-    }
-    .backdrop .line-error {
-      background: rgba(220, 38, 38, 0.18);
-      outline: 1px solid rgba(220, 38, 38, 0.45);
-    }
-    #markdown-input {
-      position: relative;
-      display: block;
-      width: 100%;
+    #ace-editor {
       height: 100%;
-      border: none;
-      background: transparent;
-      resize: none;
-      outline: none;
+      border-right: 1px solid var(--border);
+    }
+    /* Ace 行级标红（解析失败行） */
+    .ace-line-error {
+      position: absolute;
+      background: var(--error-bg);
+      outline: 1px solid var(--error-outline);
+      z-index: 20;
     }
     /* 树形图面板：标题栏 + 抽屉 + 渲染区 */
     .tree-panel {
@@ -69,27 +89,28 @@
       align-items: center;
       justify-content: space-between;
       padding: 4px 12px;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid var(--border-soft);
       font-size: 12px;
-      color: #666;
+      color: var(--muted);
     }
     #drawer-toggle {
       border: none;
       background: none;
+      color: var(--fg);
       cursor: pointer;
       font-size: 14px;
       padding: 2px 6px;
       border-radius: 4px;
     }
     #drawer-toggle:hover, #drawer-toggle[aria-expanded="true"] {
-      background: #eee;
+      background: var(--btn-hover);
     }
     /* 抽屉：二级界面，推开渲染区而非遮挡 */
     #symbol-drawer {
       display: none;
       padding: 8px 12px;
-      border-bottom: 1px solid #eee;
-      background: #fafafa;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--panel-bg);
       font-size: 12px;
     }
     #symbol-drawer.open { display: block; }
@@ -105,33 +126,38 @@
       display: flex;
       align-items: center;
       gap: 4px;
-      color: #444;
+      color: var(--fg);
     }
     .drawer-row input[type="text"] {
       width: 3.5em;
       padding: 2px 6px;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 13px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--border);
       border-radius: 4px;
       text-align: center;
+      background: var(--bg);
+      color: var(--fg);
     }
     .drawer-row input[type="number"] {
       width: 3.5em;
       padding: 2px 6px;
       font-size: 13px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--border);
       border-radius: 4px;
+      background: var(--bg);
+      color: var(--fg);
     }
     .drawer-row button {
       padding: 2px 10px;
       font-size: 12px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--border);
       border-radius: 4px;
-      background: #fff;
+      background: var(--btn-bg);
+      color: var(--fg);
       cursor: pointer;
     }
-    .drawer-row button:hover { background: #f0f0f0; }
+    .drawer-row button:hover { background: var(--btn-hover); }
     #tree-output {
       flex: 1;
       margin: 0;
@@ -143,24 +169,33 @@
       white-space: pre;
     }
     #status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       padding: 4px 16px;
-      border-top: 1px solid #ddd;
+      border-top: 1px solid var(--border);
       font-size: 12px;
-      color: #666;
+      color: var(--muted);
+    }
+    #vim-mode {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      min-width: 6em;
+    }
+    #status-bar.error #status-text {
+      color: var(--error-fg);
     }
     #status-bar.error {
-      color: #b91c1c;
-      background: rgba(220, 38, 38, 0.08);
+      background: var(--error-bar-bg);
     }
   </style>
 </head>
 <body>
-  <header>Indentree</header>
+  <header>
+    <span>Indentree</span>
+    <button id="theme-toggle" title="切换主题（跟随系统 / 浅色 / 深色）">🖥 跟随系统</button>
+  </header>
   <main>
-    <div class="editor">
-      <div class="backdrop" id="backdrop" aria-hidden="true"></div>
-      <textarea id="markdown-input" placeholder="粘贴 Markdown（标题或列表写法）……" spellcheck="false"></textarea>
-    </div>
+    <div id="ace-editor"></div>
     <div class="tree-panel">
       <div class="panel-header">
         <span>树形图</span>
@@ -183,7 +218,15 @@
       <pre id="tree-output"></pre>
     </div>
   </main>
-  <footer id="status-bar">就绪</footer>
+  <footer id="status-bar">
+    <span id="vim-mode"></span>
+    <span id="status-text">就绪</span>
+  </footer>
+  <script src="./vendor/ace/ace.js"></script>
+  <script src="./vendor/ace/keybinding-vim.js"></script>
+  <script src="./vendor/ace/mode-markdown.js"></script>
+  <script src="./vendor/ace/theme-github.js"></script>
+  <script src="./vendor/ace/theme-github_dark.js"></script>
   <script type="module">
     import {
       parseMarkdown,
@@ -199,11 +242,68 @@
     } from './src/tree-symbols.mjs';
 
     const STORAGE_KEY = 'indentree:tree-symbols';
+    const THEME_KEY = 'indentree:theme';
 
-    const input = document.getElementById('markdown-input');
     const output = document.getElementById('tree-output');
-    const backdrop = document.getElementById('backdrop');
     const statusBar = document.getElementById('status-bar');
+    const statusText = document.getElementById('status-text');
+    const vimModeEl = document.getElementById('vim-mode');
+
+    // ---- 主题：跟随系统（auto）/ 浅色 / 深色，Ace 主题联动 ----
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+    const THEME_CYCLE = ['auto', 'light', 'dark'];
+    const THEME_LABELS = { auto: '🖥 跟随系统', light: '☀ 浅色', dark: '🌙 深色' };
+    let themeSetting = localStorage.getItem(THEME_KEY) ?? 'auto';
+
+    const resolvedTheme = () =>
+      themeSetting === 'auto' ? (themeMedia.matches ? 'dark' : 'light') : themeSetting;
+
+    let editor = null; // 下方初始化后赋值
+    const applyTheme = () => {
+      const resolved = resolvedTheme();
+      document.documentElement.dataset.theme = resolved;
+      themeToggle.textContent = THEME_LABELS[themeSetting];
+      editor?.setTheme(resolved === 'dark' ? 'ace/theme/github_dark' : 'ace/theme/github');
+    };
+    themeToggle.addEventListener('click', () => {
+      themeSetting = THEME_CYCLE[(THEME_CYCLE.indexOf(themeSetting) + 1) % THEME_CYCLE.length];
+      localStorage.setItem(THEME_KEY, themeSetting);
+      applyTheme();
+    });
+    themeMedia.addEventListener('change', () => {
+      if (themeSetting === 'auto') applyTheme();
+    });
+
+    // ---- Ace 编辑器（vim 模式） ----
+    const SAMPLE = ['# 欢迎使用 Indentree', '', '- 左侧用 vim 键位编辑 Markdown', '  - 按 i 进入插入模式', '  - 按 Esc 返回普通模式', '- 右侧树形图实时跟随'].join('\n');
+    ace.config.set('basePath', './vendor/ace');
+    editor = ace.edit('ace-editor', {
+      mode: 'ace/mode/markdown',
+      keyboardHandler: 'ace/keyboard/vim',
+      value: SAMPLE,
+      showPrintMargin: false,
+      useWorker: false,
+      fontSize: 14,
+    });
+    const Range = ace.require('ace/range').Range;
+
+    // vim 模式显示：官方 getStatusText 返回 INSERT / VISUAL…，空串即 NORMAL
+    const updateVimMode = () => {
+      const text = editor.keyBinding.getStatusText?.(editor) ?? '';
+      vimModeEl.textContent = text === '' ? 'NORMAL' : text;
+    };
+    editor.on('changeStatus', updateVimMode);
+    updateVimMode();
+
+    // 跨视图编辑后的 Ace 重建：按行号恢复光标，撤销栈清空为已接受代价
+    const rebuildEditor = (text) => {
+      if (text === editor.getValue()) return;
+      const { row, column } = editor.getCursorPosition();
+      editor.session.setValue(text);
+      editor.moveCursorTo(Math.min(row, editor.session.getLength() - 1), column);
+      editor.clearSelection();
+    };
 
     // ---- 分支符号设置：默认 < localStorage < URL 参数 ----
     const loadStored = () => {
@@ -272,50 +372,42 @@
       setTimeout(() => (copyFeedback.textContent = ''), 1500);
     });
 
-    // ---- 渲染与同步 ----
-    const escapeHtml = (s) =>
-      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-    // 行级标红：backdrop 与 textarea 字体/内边距一致，逐行对齐；
-    // 空行放零宽空格占位，保证行高一致
-    const renderBackdrop = (errorLine) => {
-      backdrop.innerHTML = input.value
-        .split('\n')
-        .map((line, i) => {
-          const cls = i + 1 === errorLine ? ' class="line-error"' : '';
-          return `<div${cls}>${escapeHtml(line) || '&#8203;'}</div>`;
-        })
-        .join('');
-      backdrop.scrollTop = input.scrollTop;
-    };
-
+    // ---- 错误行级标红（Ace marker）与状态条 ----
+    let errorMarkerId = null;
     const showError = (line) => {
-      renderBackdrop(line);
-      statusBar.textContent = `第 ${line} 行无法解析`;
+      clearErrorMarker();
+      errorMarkerId = editor.session.addMarker(
+        new Range(line - 1, 0, line - 1, 1),
+        'ace-line-error',
+        'fullLine',
+      );
+      statusText.textContent = `第 ${line} 行无法解析`;
       statusBar.classList.add('error');
     };
-
+    const clearErrorMarker = () => {
+      if (errorMarkerId !== null) {
+        editor.session.removeMarker(errorMarkerId);
+        errorMarkerId = null;
+      }
+    };
     const clearError = () => {
-      renderBackdrop(null);
-      statusBar.textContent = '就绪';
+      clearErrorMarker();
+      statusText.textContent = '就绪';
       statusBar.classList.remove('error');
     };
 
     function renderTree() {
       try {
-        output.textContent = renderTreeText(parseMarkdown(input.value), symbols);
+        output.textContent = renderTreeText(parseMarkdown(editor.getValue()), symbols);
         clearError();
       } catch (err) {
         showError(err instanceof MarkdownParseError ? err.line : 1);
       }
     }
 
-    input.addEventListener('scroll', () => {
-      backdrop.scrollTop = input.scrollTop;
-    });
-
+    // ---- 防抖同步 ----
     let timer = null;
-    input.addEventListener('input', () => {
+    editor.session.on('change', () => {
       clearTimeout(timer);
       timer = setTimeout(renderTree, 300);
     });
@@ -329,8 +421,11 @@
       clearError,
       getSymbols: () => symbols,
       applySymbols,
+      rebuildEditor,
+      editor,
     };
 
+    applyTheme();
     reflectFields();
     renderTree();
   </script>
