@@ -15,6 +15,7 @@
       --muted: #666;
       --btn-bg: #fff;
       --btn-hover: #f0f0f0;
+      --accent: #2563eb;
       --error-fg: #b91c1c;
       --error-bg: rgba(220, 38, 38, 0.18);
       --error-outline: rgba(220, 38, 38, 0.45);
@@ -29,6 +30,7 @@
       --muted: #8b949e;
       --btn-bg: #21262d;
       --btn-hover: #30363d;
+      --accent: #4f8cff;
       --error-fg: #f87171;
       --error-bg: rgba(248, 81, 73, 0.25);
       --error-outline: rgba(248, 81, 73, 0.5);
@@ -61,16 +63,171 @@
       border-radius: 4px;
     }
     #theme-toggle:hover { background: var(--btn-hover); }
+    /* 三栏工作台：圆角卡片 + 栏间 ⋮ 握把分隔条（VSCode 式收放） */
     main {
       flex: 1;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      display: flex;
+      min-height: 0;
+      padding: 8px;
+      position: relative;
+    }
+    .col {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      flex: none;
+    }
+    .col.center { flex: 1; }
+    #col-left { width: 240px; }
+    #col-right { width: 280px; }
+    .col.collapsed { width: 0 !important; border: none; }
+    #ace-editor {
+      flex: 1;
       min-height: 0;
     }
-    #ace-editor {
-      height: 100%;
-      border-right: 1px solid var(--border);
+    .panel-header .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
     }
+    /* 左栏大纲占位（ticket 06 才接真实结构操作） */
+    .outline-body {
+      flex: 1;
+      overflow: auto;
+      padding: 6px 0;
+    }
+    .outline-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 12px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .outline-row:hover { background: var(--btn-hover); }
+    .outline-row .grip { color: var(--muted); letter-spacing: -2px; }
+    .outline-row.depth-2 { padding-left: 30px; }
+    .outline-row.depth-3 { padding-left: 48px; }
+    /* ⋮ 握把分隔条 */
+    .gutter {
+      width: 12px;
+      cursor: col-resize;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+      touch-action: none;
+    }
+    .gutter::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 5px;
+      width: 2px;
+      background: transparent;
+      border-radius: 1px;
+      transition: background 0.15s;
+    }
+    .gutter:hover::before { background: var(--accent); }
+    .gutter span {
+      color: var(--muted);
+      font-size: 11px;
+      user-select: none;
+      pointer-events: none;
+      background: var(--bg);
+      padding: 3px 0;
+      border-radius: 4px;
+    }
+    /* 收起态：分隔条变成可反向拖拽的边缘条 */
+    .gutter.collapsed { width: 16px; cursor: ew-resize; }
+    .gutter.collapsed span { display: none; }
+    .gutter.collapsed::before { left: 7px; background: var(--border); }
+    .gutter.collapsed:hover::before { background: var(--accent); }
+    /* 侧边恢复图标（VSCode 式竖排） */
+    .reopen {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 40;
+      display: none;
+      align-items: center;
+      gap: 4px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      padding: 12px 4px;
+      font-size: 11px;
+      color: var(--muted);
+      cursor: pointer;
+      writing-mode: vertical-rl;
+      letter-spacing: 2px;
+    }
+    .reopen.left { left: 0; border-left: none; border-radius: 0 8px 8px 0; }
+    .reopen.right { right: 0; border-right: none; border-radius: 8px 0 0 8px; }
+    .reopen.on { display: flex; }
+    .reopen:hover { color: var(--accent); border-color: var(--accent); }
+    /* 窄屏单栏聚焦：分段切换（头部） + 右侧快速切换条 */
+    #view-switch {
+      display: none;
+      gap: 4px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3px;
+    }
+    #view-switch button {
+      border: none;
+      background: transparent;
+      color: var(--fg);
+      border-radius: 6px;
+      padding: 4px 14px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #view-switch button.cur { background: var(--accent); color: #fff; }
+    .side-switch {
+      display: none;
+      position: fixed;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 60;
+      flex-direction: column;
+      gap: 6px;
+      padding: 6px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-right: none;
+      border-radius: 10px 0 0 10px;
+    }
+    .side-switch button {
+      border: none;
+      background: transparent;
+      font-size: 12px;
+      padding: 6px 4px;
+      writing-mode: vertical-rl;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .side-switch button.cur { color: var(--accent); font-weight: 700; }
+    body.narrow #view-switch { display: flex; }
+    body.narrow .side-switch { display: flex; }
+    body.narrow .gutter,
+    body.narrow .reopen { display: none !important; }
+    body.narrow .col {
+      display: none;
+      width: auto !important;
+      border: 1px solid var(--border);
+      flex: 1;
+    }
+    body.narrow .col.active { display: flex; }
     /* Ace 行级标红（解析失败行） */
     .ace-line-error {
       position: absolute;
@@ -109,13 +266,14 @@
     .panel-header {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 8px;
       padding: 4px 12px;
       border-bottom: 1px solid var(--border-soft);
       font-size: 12px;
       color: var(--muted);
     }
     #drawer-toggle {
+      margin-left: auto;
       border: none;
       background: none;
       color: var(--fg);
@@ -214,12 +372,39 @@
 <body>
   <header>
     <span>Indentree</span>
+    <div id="view-switch" role="tablist" aria-label="视图切换">
+      <button type="button" data-view="outline">大纲</button>
+      <button type="button" data-view="md" class="cur">Markdown</button>
+      <button type="button" data-view="tree">树形图</button>
+    </div>
     <button id="theme-toggle" title="切换主题（跟随系统 / 浅色 / 深色）">🖥 跟随系统</button>
   </header>
-  <main>
-    <div id="ace-editor"></div>
-    <div class="tree-panel">
+  <main id="panels">
+    <section class="col" id="col-left" aria-label="大纲">
       <div class="panel-header">
+        <span class="dot"></span>
+        <span>大纲</span>
+      </div>
+      <div class="outline-body">
+        <div class="outline-row"><span class="grip">⠿</span><span>欢迎使用 Indentree</span></div>
+        <div class="outline-row depth-2"><span class="grip">⠿</span><span>左侧用 vim 键位编辑 Markdown</span></div>
+        <div class="outline-row depth-3"><span class="grip">⠿</span><span>按 i 进入插入模式</span></div>
+        <div class="outline-row depth-3"><span class="grip">⠿</span><span>按 Esc 返回普通模式</span></div>
+        <div class="outline-row depth-2"><span class="grip">⠿</span><span>右侧树形图实时跟随</span></div>
+      </div>
+    </section>
+    <div class="gutter" data-side="left"><span>⋮</span></div>
+    <section class="col center" id="col-center" aria-label="Markdown 编辑器">
+      <div class="panel-header">
+        <span class="dot"></span>
+        <span>Markdown</span>
+      </div>
+      <div id="ace-editor"></div>
+    </section>
+    <div class="gutter" data-side="right"><span>⋮</span></div>
+    <section class="col tree-panel" id="col-right" aria-label="树形图">
+      <div class="panel-header">
+        <span class="dot"></span>
         <span>树形图</span>
         <button id="drawer-toggle" title="自定义分支符号" aria-expanded="false">⚙</button>
       </div>
@@ -238,8 +423,15 @@
         </div>
       </div>
       <pre id="tree-output"></pre>
-    </div>
+    </section>
+    <button type="button" class="reopen left" id="reopen-left">☰ 大纲</button>
+    <button type="button" class="reopen right" id="reopen-right">🌲 树形图</button>
   </main>
+  <div class="side-switch" id="side-switch" aria-label="快速切换视图">
+    <button type="button" data-view="outline">大纲</button>
+    <button type="button" data-view="md" class="cur">文本</button>
+    <button type="button" data-view="tree">树</button>
+  </div>
   <footer id="status-bar">
     <span id="vim-mode"></span>
     <span id="status-text">就绪</span>
@@ -262,6 +454,13 @@
       symbolsFromSearch,
       symbolsToSearch,
     } from './src/tree-symbols.mjs';
+    import {
+      NARROW_BREAKPOINT,
+      dragTargetWidth,
+      resolveLayout,
+      serializeLayout,
+      snapPanel,
+    } from './src/panel-layout.mjs';
 
     const STORAGE_KEY = 'indentree:tree-symbols';
     const THEME_KEY = 'indentree:theme';
@@ -464,6 +663,100 @@
       setTimeout(() => (copyFeedback.textContent = ''), 1500);
     });
 
+    // ---- 三栏布局：拖拽调宽 / 推到底收起 / 侧边恢复 / 持久化 ----
+    const LAYOUT_KEY = 'indentree:layout';
+    const cols = {
+      left: document.getElementById('col-left'),
+      right: document.getElementById('col-right'),
+    };
+    const gutters = {
+      left: document.querySelector('.gutter[data-side="left"]'),
+      right: document.querySelector('.gutter[data-side="right"]'),
+    };
+    const reopens = {
+      left: document.getElementById('reopen-left'),
+      right: document.getElementById('reopen-right'),
+    };
+    const loadLayoutStored = () => {
+      try {
+        return JSON.parse(localStorage.getItem(LAYOUT_KEY));
+      } catch {
+        return null;
+      }
+    };
+    const layout = resolveLayout(loadLayoutStored());
+    const persistLayout = () =>
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(serializeLayout(layout)));
+    const applySide = (side) => {
+      const st = layout[side];
+      cols[side].classList.toggle('collapsed', st.collapsed);
+      gutters[side].classList.toggle('collapsed', st.collapsed);
+      reopens[side].classList.toggle('on', st.collapsed);
+      cols[side].style.width = st.collapsed ? '' : `${st.width}px`;
+      editor.resize();
+    };
+    for (const side of ['left', 'right']) {
+      gutters[side].addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startW = layout[side].collapsed ? 0 : cols[side].getBoundingClientRect().width;
+        document.body.style.userSelect = 'none';
+        const move = (ev) => {
+          const snap = snapPanel(
+            dragTargetWidth(side, startW, ev.clientX - startX),
+            window.innerWidth,
+          );
+          layout[side].collapsed = snap.collapsed;
+          if (!snap.collapsed) layout[side].width = snap.width; // 收起时 width 记上次展开值
+          applySide(side);
+        };
+        const up = () => {
+          removeEventListener('pointermove', move);
+          removeEventListener('pointerup', up);
+          document.body.style.userSelect = '';
+          persistLayout();
+        };
+        addEventListener('pointermove', move);
+        addEventListener('pointerup', up);
+      });
+      reopens[side].addEventListener('click', () => {
+        layout[side].collapsed = false;
+        applySide(side);
+        persistLayout();
+      });
+    }
+
+    // ---- 窄屏（<720px）单栏聚焦：分段切换 + 右侧快速切换条 ----
+    const narrowMq = window.matchMedia(`(max-width: ${NARROW_BREAKPOINT - 1}px)`);
+    const VIEW_COLS = { outline: 'col-left', md: 'col-center', tree: 'col-right' };
+    const viewSwitch = document.getElementById('view-switch');
+    const sideSwitch = document.getElementById('side-switch');
+    let narrowView = 'md';
+    const applyNarrowView = () => {
+      for (const [view, id] of Object.entries(VIEW_COLS)) {
+        document.getElementById(id).classList.toggle('active', view === narrowView);
+      }
+      for (const root of [viewSwitch, sideSwitch]) {
+        root.querySelectorAll('button').forEach((b) => {
+          b.classList.toggle('cur', b.dataset.view === narrowView);
+        });
+      }
+      editor.resize();
+    };
+    for (const root of [viewSwitch, sideSwitch]) {
+      root.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-view]');
+        if (!btn) return;
+        narrowView = btn.dataset.view;
+        applyNarrowView();
+      });
+    }
+    const applyViewportMode = () => {
+      document.body.classList.toggle('narrow', narrowMq.matches);
+      applyNarrowView();
+    };
+    narrowMq.addEventListener('change', applyViewportMode);
+
     // ---- 错误行级标红（Ace marker）与状态条 ----
     let errorMarkerId = null;
     const showError = (line) => {
@@ -515,10 +808,15 @@
       applySymbols,
       rebuildEditor,
       editor,
+      layout,
+      applySide,
     };
 
     applyTheme();
     reflectFields();
+    applySide('left');
+    applySide('right');
+    applyViewportMode();
     renderTree();
   </script>
 </body>
