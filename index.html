@@ -58,7 +58,82 @@
       resize: none;
       outline: none;
     }
+    /* 树形图面板：标题栏 + 抽屉 + 渲染区 */
+    .tree-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 12px;
+      border-bottom: 1px solid #eee;
+      font-size: 12px;
+      color: #666;
+    }
+    #drawer-toggle {
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    #drawer-toggle:hover, #drawer-toggle[aria-expanded="true"] {
+      background: #eee;
+    }
+    /* 抽屉：二级界面，推开渲染区而非遮挡 */
+    #symbol-drawer {
+      display: none;
+      padding: 8px 12px;
+      border-bottom: 1px solid #eee;
+      background: #fafafa;
+      font-size: 12px;
+    }
+    #symbol-drawer.open { display: block; }
+    .drawer-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .drawer-row:last-child { margin-bottom: 0; }
+    .drawer-row label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: #444;
+    }
+    .drawer-row input[type="text"] {
+      width: 3.5em;
+      padding: 2px 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .drawer-row input[type="number"] {
+      width: 3.5em;
+      padding: 2px 6px;
+      font-size: 13px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .drawer-row button {
+      padding: 2px 10px;
+      font-size: 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+    .drawer-row button:hover { background: #f0f0f0; }
     #tree-output {
+      flex: 1;
       margin: 0;
       padding: 12px;
       overflow: auto;
@@ -86,7 +161,27 @@
       <div class="backdrop" id="backdrop" aria-hidden="true"></div>
       <textarea id="markdown-input" placeholder="粘贴 Markdown（标题或列表写法）……" spellcheck="false"></textarea>
     </div>
-    <pre id="tree-output"></pre>
+    <div class="tree-panel">
+      <div class="panel-header">
+        <span>树形图</span>
+        <button id="drawer-toggle" title="自定义分支符号" aria-expanded="false">⚙</button>
+      </div>
+      <div id="symbol-drawer">
+        <div class="drawer-row">
+          <label>中间分支 <input type="text" id="sym-branch" /></label>
+          <label>末分支 <input type="text" id="sym-branch-last" /></label>
+          <label>竖线 <input type="text" id="sym-vertical" /></label>
+          <label>横线 <input type="text" id="sym-horizontal" /></label>
+          <label>长度 <input type="number" id="sym-hlen" min="1" max="8" /></label>
+        </div>
+        <div class="drawer-row" id="preset-row"></div>
+        <div class="drawer-row">
+          <button id="copy-link">复制分享链接</button>
+          <span id="copy-feedback" style="color:#16a34a"></span>
+        </div>
+      </div>
+      <pre id="tree-output"></pre>
+    </div>
   </main>
   <footer id="status-bar">就绪</footer>
   <script type="module">
@@ -96,12 +191,88 @@
       renderTreeText,
       MarkdownParseError,
     } from './src/intermediate-tree.mjs';
+    import {
+      PRESETS,
+      resolveSymbols,
+      symbolsFromSearch,
+      symbolsToSearch,
+    } from './src/tree-symbols.mjs';
+
+    const STORAGE_KEY = 'indentree:tree-symbols';
 
     const input = document.getElementById('markdown-input');
     const output = document.getElementById('tree-output');
     const backdrop = document.getElementById('backdrop');
     const statusBar = document.getElementById('status-bar');
 
+    // ---- 分支符号设置：默认 < localStorage < URL 参数 ----
+    const loadStored = () => {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? {};
+      } catch {
+        return {};
+      }
+    };
+    const hasUrlOverride = Object.keys(symbolsFromSearch(location.search)).length > 0;
+    let symbols = resolveSymbols({ stored: loadStored(), urlSearch: location.search });
+    const persist = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(symbols));
+    if (hasUrlOverride) persist(); // URL 分享载入后写穿，刷新不丢
+
+    // ---- 抽屉 ----
+    const drawer = document.getElementById('symbol-drawer');
+    const drawerToggle = document.getElementById('drawer-toggle');
+    drawerToggle.addEventListener('click', () => {
+      const open = drawer.classList.toggle('open');
+      drawerToggle.setAttribute('aria-expanded', String(open));
+    });
+
+    const fields = {
+      branch: document.getElementById('sym-branch'),
+      branchLast: document.getElementById('sym-branch-last'),
+      vertical: document.getElementById('sym-vertical'),
+      horizontal: document.getElementById('sym-horizontal'),
+      horizontalLength: document.getElementById('sym-hlen'),
+    };
+    const reflectFields = () => {
+      fields.branch.value = symbols.branch;
+      fields.branchLast.value = symbols.branchLast;
+      fields.vertical.value = symbols.vertical;
+      fields.horizontal.value = symbols.horizontal;
+      fields.horizontalLength.value = String(symbols.horizontalLength);
+    };
+    const applySymbols = (next) => {
+      symbols = { ...symbols, ...next };
+      persist();
+      reflectFields();
+      renderTree();
+    };
+    for (const [key, el] of Object.entries(fields)) {
+      el.addEventListener('input', () => {
+        const value = key === 'horizontalLength' ? Number(el.value) : el.value;
+        if (key === 'horizontalLength' && !(value >= 1 && value <= 8)) return;
+        if (key !== 'horizontalLength' && value === '') return;
+        applySymbols({ [key]: value });
+      });
+    }
+
+    const presetRow = document.getElementById('preset-row');
+    for (const [id, preset] of Object.entries(PRESETS)) {
+      const btn = document.createElement('button');
+      btn.textContent = preset.label;
+      btn.dataset.preset = id;
+      btn.addEventListener('click', () => applySymbols(preset.symbols));
+      presetRow.appendChild(btn);
+    }
+
+    const copyFeedback = document.getElementById('copy-feedback');
+    document.getElementById('copy-link').addEventListener('click', async () => {
+      const url = `${location.origin}${location.pathname}${symbolsToSearch(symbols)}`;
+      await navigator.clipboard.writeText(url);
+      copyFeedback.textContent = '已复制';
+      setTimeout(() => (copyFeedback.textContent = ''), 1500);
+    });
+
+    // ---- 渲染与同步 ----
     const escapeHtml = (s) =>
       s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -130,14 +301,14 @@
       statusBar.classList.remove('error');
     };
 
-    const sync = () => {
+    function renderTree() {
       try {
-        output.textContent = renderTreeText(parseMarkdown(input.value));
+        output.textContent = renderTreeText(parseMarkdown(input.value), symbols);
         clearError();
       } catch (err) {
         showError(err instanceof MarkdownParseError ? err.line : 1);
       }
-    };
+    }
 
     input.addEventListener('scroll', () => {
       backdrop.scrollTop = input.scrollTop;
@@ -146,13 +317,22 @@
     let timer = null;
     input.addEventListener('input', () => {
       clearTimeout(timer);
-      timer = setTimeout(sync, 300);
+      timer = setTimeout(renderTree, 300);
     });
 
     // 调试/验收钩子
-    window.__indentree = { parseMarkdown, serializeMarkdown, renderTreeText, showError, clearError };
+    window.__indentree = {
+      parseMarkdown,
+      serializeMarkdown,
+      renderTreeText,
+      showError,
+      clearError,
+      getSymbols: () => symbols,
+      applySymbols,
+    };
 
-    sync();
+    reflectFields();
+    renderTree();
   </script>
 </body>
 </html>

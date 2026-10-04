@@ -1,4 +1,5 @@
 import MarkdownIt from '../vendor/markdown-it.mjs';
+import { DEFAULT_SYMBOLS } from './tree-symbols.mjs';
 
 const md = new MarkdownIt();
 
@@ -218,31 +219,28 @@ function emitNode(node, indent) {
   }
 }
 
-const DEFAULT_SYMBOLS = {
-  branch: '├', // 中间分支
-  branchLast: '└', // 末分支
-  vertical: '│', // 竖线
-  horizontal: '─', // 横线
-  horizontalLength: 2,
-};
-
 /**
  * 中间树 → 树形图文本（纯函数）。root 自身不渲染，只渲染其子树。
+ * options 可覆盖四符号与横线长度（见 tree-symbols.mjs 的符号模型）。
+ * 子级前缀宽度按实际连接线长度计算，多字符符号也能对齐。
  */
 export function renderTreeText(root, options = {}) {
   const symbols = { ...DEFAULT_SYMBOLS, ...options };
   const h = symbols.horizontal.repeat(symbols.horizontalLength);
   const midConnector = `${symbols.branch}${h} `;
   const lastConnector = `${symbols.branchLast}${h} `;
-  const pipePrefix = `${symbols.vertical}${' '.repeat(h.length + 1)}`;
-  const blankPrefix = ' '.repeat(h.length + 2);
 
   const lines = [];
   const walk = (node, prefix, isLast) => {
     const connector = isLast ? lastConnector : midConnector;
     const textLines = node.text.split('\n');
     lines.push(prefix + connector + textLines[0]);
-    const childPrefix = prefix + (isLast ? blankPrefix : pipePrefix);
+    const width = connector.length;
+    const childPrefix =
+      prefix +
+      (isLast
+        ? ' '.repeat(width)
+        : symbols.vertical + ' '.repeat(Math.max(0, width - symbols.vertical.length)));
     for (const extra of textLines.slice(1)) {
       lines.push(childPrefix + extra);
     }
