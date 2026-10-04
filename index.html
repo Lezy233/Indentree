@@ -89,6 +89,17 @@
     .ace-github-dark .ace_cursor {
       color: #528bff !important;
     }
+    /* 覆盖 vim 插件注入的红色 block 光标（.normal-mode .ace_cursor rgba(255,0,0,0.5)） */
+    .ace_editor.normal-mode .ace_cursor {
+      background-color: rgba(36, 99, 235, 0.45) !important;
+    }
+    .ace-github-dark.normal-mode .ace_cursor {
+      background-color: rgba(82, 139, 255, 0.55) !important;
+    }
+    /* VSCode vim 方案：visual 模式下取消当前行高亮，避免与选区颜色混淆 */
+    .ace_editor.vim-visual .ace_active-line {
+      background: transparent !important;
+    }
     /* 树形图面板：标题栏 + 抽屉 + 渲染区 */
     .tree-panel {
       display: flex;
@@ -303,6 +314,8 @@
     const updateVimMode = () => {
       const text = editor.keyBinding.getStatusText?.(editor) ?? '';
       vimModeEl.textContent = text === '' ? 'NORMAL' : text;
+      // visual 模式挂类名，CSS 据此取消当前行高亮（VSCode vim 方案）
+      editor.container.classList.toggle('vim-visual', text.startsWith('VISUAL'));
     };
     editor.on('changeStatus', updateVimMode);
     updateVimMode();
@@ -329,19 +342,37 @@
 
     // 宽字符 block 光标：ace 的光标层定位已按全角计 2 列，但块宽固定 1 字符，
     // 光标落在汉字/全角符号上时只盖住一半。每次光标渲染后按字符实测宽度修正。
+    // visual 正向选区时 vim 的 drawCursor 会把块画在 lead 左侧那个字符上、
+    // 却只按 1× 宽度左移；宽字符时需以 lead 左边字符定宽、再补左移 1×。
     const WIDE_CHAR =
       /[ᄀ-ᅟ⺀-〾぀-ヿ㐀-䶿一-鿿ꥠ-꥿가-힯豈-﫿︰-﹏＀-｠￠-￦]/;
     const fixWideCursor = () => {
       const vim = editor.state?.cm?.state?.vim;
-      if (vim?.insertMode) return; // 插入模式是细光标，无需处理
-      const pos = editor.getCursorPosition();
+      if (vim?.insertMode) {
+        // 从 visual 宽字符补偿切回细光标时清掉左移
+        editor.container.querySelectorAll('.ace_cursor-layer .ace_cursor').forEach((c) => {
+          if (c.style.marginLeft !== '') c.style.marginLeft = '';
+        });
+        return;
+      }
+      const sel = editor.selection;
+      const pos = editor.getCursorPosition(); // lead
       const line = editor.session.getLine(pos.row) ?? '';
-      const ch = line.charAt(pos.column);
-      const cp = line.codePointAt(pos.column);
+      const charWidth = editor.renderer.characterWidth;
+      // 正向非空选区：块盖在 lead 左边那个字符上
+      const forward = !sel.isEmpty() && !sel.isBackwards();
+      const col = forward && pos.column > 0 ? pos.column - 1 : pos.column;
+      const ch = line.charAt(col);
+      let cp = line.codePointAt(col);
+      // col 落在代理对低半时取完整码点
+      if (ch >= '\udc00' && ch <= '\udfff' && col > 0) cp = line.codePointAt(col - 1);
       const wide = ch !== '' && (cp > 0xffff || WIDE_CHAR.test(ch));
-      const width = `${editor.renderer.characterWidth * (wide ? 2 : 1)}px`;
+      const width = `${charWidth * (wide ? 2 : 1)}px`;
+      // 正向选区 + 宽字符：ace 只预留 1× 左移，需再补 1×
+      const shift = forward && wide ? `${-charWidth}px` : '';
       editor.container.querySelectorAll('.ace_cursor-layer .ace_cursor').forEach((c) => {
         if (c.style.width !== width) c.style.width = width;
+        if (c.style.marginLeft !== shift) c.style.marginLeft = shift;
       });
     };
     // MutationObserver：光标层每次重绘后同步修正宽度（微任务在渲染前执行，不依赖 rAF）
