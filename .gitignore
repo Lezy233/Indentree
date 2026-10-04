@@ -6,4 +6,4 @@ tmp.md
 .idea/
 *.swp
 *.swo
-.DS_Store
+.DS_Store.scratch/
