@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Indentree</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 8px 16px;
+      border-bottom: 1px solid #ddd;
+      font-weight: 600;
+    }
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 0;
+    }
+    #markdown-input {
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-right: 1px solid #ddd;
+      padding: 12px;
+      resize: none;
+      outline: none;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    #tree-output {
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+  <header>Indentree</header>
+  <main>
+    <textarea id="markdown-input" placeholder="粘贴 Markdown（标题或列表写法）……" spellcheck="false"></textarea>
+    <pre id="tree-output"></pre>
+  </main>
+  <script type="module">
+    import { parseMarkdown, renderTreeText } from './src/intermediate-tree.mjs';
+
+    const input = document.getElementById('markdown-input');
+    const output = document.getElementById('tree-output');
+
+    const sync = () => {
+      output.textContent = renderTreeText(parseMarkdown(input.value));
+    };
+
+    let timer = null;
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(sync, 300);
+    });
+
+    sync();
+  </script>
+</body>
+</html>

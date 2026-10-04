@@ -6,10 +6,12 @@
 
 **Status:** ready-for-agent
 
-- [ ] markdown-it 以单文件 ESM 形式 vendor 进 repo，页面与测试均可直接 import
-- [ ] 中间树节点模型落地：节点 = 原始文本（保留行内 Markdown）+ 子节点列表 + kind（heading / list-item / paragraph / leaf-block）；标题深度与列表嵌套统一折叠为父子嵌套
-- [ ] `node --test` 可运行，核心用例通过：标题映射、列表嵌套映射、混合写法、树形图文本渲染（默认 ├──/└──/│/─）
-- [ ] 静态页面双栏：左侧 textarea 输入，右侧 pre 渲染树形图；300ms 防抖同步；粘贴 spec 中的示例 markdown 得到正确目录树
-- [ ] 手动验收：浏览器打开页面，粘贴示例 markdown，树形图与预期一致
+- [x] markdown-it 以单文件 ESM 形式 vendor 进 repo，页面与测试均可直接 import
+- [x] 中间树节点模型落地：节点 = 原始文本（保留行内 Markdown）+ 子节点列表 + kind（heading / list-item / paragraph / leaf-block）；标题深度与列表嵌套统一折叠为父子嵌套
+- [x] `node --test` 可运行，核心用例通过：标题映射、列表嵌套映射、混合写法、树形图文本渲染（默认 ├──/└──/│/─）
+- [x] 静态页面双栏：左侧 textarea 输入，右侧 pre 渲染树形图；300ms 防抖同步；粘贴 spec 中的示例 markdown 得到正确目录树
+- [x] 手动验收：浏览器打开页面，粘贴示例 markdown，树形图与预期一致
 
 ## Comments
+
+- 2026-10-04 实现完成：`vendor/markdown-it.mjs`（markdown-it 14.1.0，esbuild 一次性打包的单文件 ESM，repo 本身无构建）；`src/intermediate-tree.mjs`（`parseMarkdown` / `renderTreeText` 纯函数）；`test/intermediate-tree.test.mjs` 11 个用例全绿；`index.html` 双栏 + 300ms 防抖。手动验收经内置浏览器实测：混合写法 + 行内 Markdown 渲染正确。注意 ES module 需经 http(s) 访问（本地 `python3 -m http.server` 即可），`file://` 直开会被浏览器 CORS 拦截。
