@@ -2,6 +2,15 @@ import MarkdownIt from '../vendor/markdown-it.mjs';
 
 const md = new MarkdownIt();
 
+/** 解析失败错误：携带源行号（1-based），供页面行级标红与状态条提示 */
+export class MarkdownParseError extends Error {
+  constructor(message, line, cause) {
+    super(message, { cause });
+    this.name = 'MarkdownParseError';
+    this.line = line;
+  }
+}
+
 function createRoot() {
   return { kind: 'root', text: '', children: [] };
 }
@@ -9,12 +18,16 @@ function createRoot() {
 /**
  * Markdown → 中间树（纯函数）。
  * 节点 = { text, kind, children }；kind ∈ root / heading / list-item / paragraph / leaf-block。
+ * 标题节点额外携带 level（1-6），供序列化时按 kind 还原写法。
  * 标题深度与列表缩进统一折叠为父子嵌套。
+ * CommonMark 本身无语法错误；任何底层异常包装为携带行号的 MarkdownParseError。
  */
-export function parseMarkdown(src) {
+export function parseMarkdown(src, parser = md) {
   const root = createRoot();
-  const tokens = md.parse(src, {});
-  const lines = src.split('\n');
+  let currentLine = 1;
+  try {
+    const tokens = parser.parse(src, {});
+    const lines = String(src).split('\n');
 
   const headingStack = []; // [{ level, node }]
   const listStack = []; // [{ parent, currentItem }]
@@ -36,6 +49,7 @@ export function parseMarkdown(src) {
   let skipUntil = null; // e.g. 'table_close'
 
   for (const token of tokens) {
+    if (token.map) currentLine = token.map[0] + 1;
     if (skipUntil) {
       if (token.type === skipUntil) skipUntil = null;
       continue;
@@ -79,7 +93,7 @@ export function parseMarkdown(src) {
       case 'inline': {
         const text = token.content;
         if (pendingHeadingLevel !== null) {
-          const node = { kind: 'heading', text, children: [] };
+          const node = { kind: 'heading', text, level: pendingHeadingLevel, children: [] };
           while (
             headingStack.length > 0 &&
             headingStack[headingStack.length - 1].level >= pendingHeadingLevel
@@ -105,18 +119,22 @@ export function parseMarkdown(src) {
         break;
       }
       case 'fence':
-      case 'code_block':
       case 'html_block': {
-        attach({ kind: 'leaf-block', text: rawSlice(lines, token), children: [] });
+        attach({ kind: 'leaf-block', text: rawSlice(lines, token, 0), children: [] });
+        break;
+      }
+      case 'code_block': {
+        // 缩进代码块的 4 空格是语义缩进，去容器缩进时保留
+        attach({ kind: 'leaf-block', text: rawSlice(lines, token, 4), children: [] });
         break;
       }
       case 'table_open': {
-        attach({ kind: 'leaf-block', text: rawSlice(lines, token), children: [] });
+        attach({ kind: 'leaf-block', text: rawSlice(lines, token, 0), children: [] });
         skipUntil = 'table_close';
         break;
       }
       case 'hr': {
-        attach({ kind: 'leaf-block', text: rawSlice(lines, token), children: [] });
+        attach({ kind: 'leaf-block', text: rawSlice(lines, token, 0), children: [] });
         break;
       }
       default:
@@ -124,13 +142,80 @@ export function parseMarkdown(src) {
     }
   }
 
-  return root;
+    return root;
+  } catch (err) {
+    if (err instanceof MarkdownParseError) throw err;
+    throw new MarkdownParseError(`第 ${currentLine} 行无法解析`, currentLine, err);
+  }
 }
 
-// 用 token 的行区间从原文切出叶子块的原始 Markdown
-function rawSlice(lines, token) {
+// 用 token 的行区间从原文切出叶子块的原始 Markdown，并去掉容器缩进
+// （reserve 列保留给块自身的语义缩进，如缩进代码块的 4 空格）；
+// 序列化时再按所在层级重新缩进，保证 round-trip 稳定
+function rawSlice(lines, token, reserve) {
   if (!token.map) return token.content ?? '';
-  return lines.slice(token.map[0], token.map[1]).join('\n');
+  const text = lines.slice(token.map[0], token.map[1]).join('\n');
+  let min = Infinity;
+  for (const line of text.split('\n')) {
+    if (line.trim() === '') continue;
+    min = Math.min(min, line.match(/^ */)[0].length);
+  }
+  if (min === Infinity) return text;
+  const strip = Math.max(0, min - reserve);
+  if (strip === 0) return text;
+  return text
+    .split('\n')
+    .map((line) => line.replace(new RegExp(`^ {0,${strip}}`), ''))
+    .join('\n');
+}
+
+/**
+ * 中间树 → Markdown（纯函数）。按 kind 还原写法：
+ * 标题仍是 #（用节点携带的 level）、列表项仍是 -、段落与叶子块原样输出。
+ * 相邻列表项之间不空行（保持紧凑列表），其余块之间空一行。
+ */
+export function serializeMarkdown(root) {
+  const top = root.kind === 'root' ? root.children : [root];
+  return emitBlocks(top, 0);
+}
+
+function emitBlocks(nodes, indent) {
+  let out = '';
+  nodes.forEach((node, i) => {
+    if (i > 0) {
+      const tight = nodes[i - 1].kind === 'list-item' && node.kind === 'list-item';
+      out += tight ? '\n' : '\n\n';
+    }
+    out += emitNode(node, indent);
+  });
+  return out;
+}
+
+function emitNode(node, indent) {
+  const pad = ' '.repeat(indent);
+  switch (node.kind) {
+    case 'heading': {
+      const own = `${pad}${'#'.repeat(node.level)} ${node.text}`;
+      return node.children.length > 0 ? `${own}\n\n${emitBlocks(node.children, indent)}` : own;
+    }
+    case 'list-item': {
+      const own = `${pad}- ${node.text}`;
+      if (node.children.length === 0) return own;
+      const sep = node.children[0].kind === 'list-item' ? '\n' : '\n\n';
+      return own + sep + emitBlocks(node.children, indent + 2);
+    }
+    case 'paragraph': {
+      const own = pad + node.text;
+      return node.children.length > 0 ? `${own}\n\n${emitBlocks(node.children, indent)}` : own;
+    }
+    case 'leaf-block':
+    default: {
+      return node.text
+        .split('\n')
+        .map((line) => (line === '' ? '' : pad + line))
+        .join('\n');
+    }
+  }
 }
 
 const DEFAULT_SYMBOLS = {
