@@ -194,6 +194,31 @@ test('结构操作：基线本身还原不了时 best-effort 放行', () => {
   assert.equal(res.reason, null);
 });
 
+test('结构操作：不忠实基线下，标题层级越界仍然拒绝', () => {
+  const tree = treeOf(['# A', '', '一段', '', '###### B', '', '###### C']);
+  const broken = setNodeText(tree, [0, 0], '# 破').tree;
+  const res = indentNode(broken, [0, 2]); // C 缩进到 6 级 B 之下 → 7 级
+  assert.equal(res.applied, false);
+  assert.equal(res.reason, 'heading-depth-limit');
+});
+
+test('结构操作：不忠实基线下，标题层级被压出 1-6 级仍然拒绝', () => {
+  const tree = treeOf(['# A', '', '一段', '', '###### H', '', '- L', '', '  # X']);
+  const broken = setNodeText(tree, [0, 0], '# 破').tree;
+  const res = outdentNode(broken, [0, 1]); // H 取消缩进 → X 的层级被压到负数
+  assert.equal(res.applied, false);
+  assert.equal(res.reason, 'heading-depth-limit');
+});
+
+test('结构操作：不忠实基线下，被改动区域结构分叉仍然拒绝', () => {
+  // 缩进后 `- b` 会被「二段2」上方的标题吞成兄弟，缩进效果在写回时丢失
+  const tree = treeOf(['# A', '', '一段1', '', '二段2', '', '- b']);
+  const broken = setNodeText(tree, [0, 0], '# 破').tree;
+  const res = indentNode(broken, [0, 2]);
+  assert.equal(res.applied, false);
+  assert.equal(res.reason, 'unrepresentable');
+});
+
 test('removeNode：删除节点并给出后继焦点路径', () => {
   const tree = treeOf(['- a', '- b', '- c']);
   const res = removeNode(tree, [1]);

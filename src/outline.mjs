@@ -75,18 +75,19 @@ export function indentNode(root, path) {
   const tree = cloneTree(root);
   const target = locateNode(tree, path);
   const prev = target.parent.children[target.index - 1];
+  const prevPath = [...path.slice(0, -1), loc.index - 1];
   target.parent.children.splice(target.index, 1);
   prev.children.push(target.node);
   if (target.node.kind === 'heading') {
     const level = prev.kind === 'heading' ? prev.level + 1 : target.node.level;
     shiftHeadingLevels(target.node, level - target.node.level);
   }
-  const reason = unrepresentable(root, tree);
+  const reason = unrepresentable(root, tree, prevPath);
   if (reason) return blocked(root, reason);
   return {
     tree,
     applied: true,
-    path: [...path.slice(0, -1), loc.index - 1, prev.children.length - 1],
+    path: [...prevPath, prev.children.length - 1],
     reason: null,
   };
 }
@@ -113,7 +114,7 @@ export function outdentNode(root, path) {
       parent.kind === 'heading' ? parent.level + 1 : parent.kind === 'root' ? 1 : target.node.level;
     if (level !== target.node.level) shiftHeadingLevels(target.node, level - target.node.level);
   }
-  const reason = unrepresentable(root, tree);
+  const reason = unrepresentable(root, tree, newParentPath);
   if (reason) return blocked(root, reason);
   return { tree, applied: true, path: [...newParentPath, insertIndex], reason: null };
 }
@@ -140,7 +141,7 @@ export function removeNode(root, path) {
 const REASON_TEXT = Object.freeze({
   'first-sibling': '首个同级节点没有可缩进的目标',
   unrepresentable: '该位置无法在 Markdown 中还原，操作已取消',
-  'heading-depth-limit': '标题层级已达上限（最多 6 级）',
+  'heading-depth-limit': '标题层级超出 1–6 级，无法还原',
   'already-top-level': '已在顶层，无法取消缩进',
 });
 
@@ -166,29 +167,53 @@ function maxHeadingLevel(node) {
   return max;
 }
 
+function minHeadingLevel(node) {
+  let min = node.kind === 'heading' ? node.level : Infinity;
+  for (const child of node.children) min = Math.min(min, minHeadingLevel(child));
+  return min;
+}
+
 function shiftHeadingLevels(node, delta) {
   if (node.kind === 'heading') node.level += delta;
   node.children.forEach((child) => shiftHeadingLevels(child, delta));
 }
 
 /**
- * 操作结果能否原样还原成 markdown：序列化再解析后结构必须不变。
- * 基线本身就还原不了时（例如用户手打的块级标记改变了节点类型）放行——
- * 整篇文档因此无法操作比放任层级漂移更糟。
+ * 操作结果能否原样还原成 markdown。
+ * - 标题层级必须落在 1-6：越界一定还原不了（7 级会重解析成段落、0 级序列化直接抛错），
+ *   与基线是否忠实无关，所以先判这一条；
+ * - 被改动区域的「锥体」（祖先链 + 被改动节点的整棵子树）序列化再解析后结构必须不变。
+ *   只看锥体：区域外既有的破损（用户在段落里手打了块级标记）不牵连，否则一行文本
+ *   就会让整篇文档无法操作；带上祖先链是因为列表项上下文会改变标题/块的归属。
  */
-function unrepresentable(before, after) {
-  if (roundTrips(after)) return null;
-  if (!roundTrips(before)) return null;
-  return maxHeadingLevel(after) > 6 ? 'heading-depth-limit' : 'unrepresentable';
+function unrepresentable(before, after, regionPath) {
+  if (minHeadingLevel(after) < 1 || maxHeadingLevel(after) > 6) return 'heading-depth-limit';
+  if (regionRoundTrips(after, regionPath)) return null;
+  if (!regionRoundTrips(before, regionPath)) return null;
+  return 'unrepresentable';
 }
 
-function roundTrips(root) {
+function regionRoundTrips(root, path) {
+  const region = cone(root, path);
+  if (!region) return false;
+  const wrapped =
+    region.kind === 'root' ? region : { kind: 'root', text: '', children: [region] };
   try {
-    const reparsed = parseMarkdown(serializeMarkdown(root));
-    return JSON.stringify(structure(reparsed)) === JSON.stringify(structure(root));
+    const reparsed = parseMarkdown(serializeMarkdown(wrapped));
+    return JSON.stringify(structure(reparsed)) === JSON.stringify(structure(wrapped));
   } catch {
     return false;
   }
+}
+
+/** 祖先链 + path 所指节点的整棵子树，丢掉其它兄弟；空路径即整棵树 */
+function cone(root, path) {
+  if (path.length === 0) return root;
+  const child = root.children[path[0]];
+  if (!child) return null;
+  if (path.length === 1) return child;
+  const inner = cone(child, path.slice(1));
+  return inner ? { ...child, children: [inner] } : null;
 }
 
 // 结构指纹：只看 kind / level / children。文本保真是行内编辑的事，
