@@ -96,24 +96,67 @@
       border-radius: 50%;
       background: var(--accent);
     }
-    /* 左栏大纲占位（ticket 06 才接真实结构操作） */
+    /* 左栏大纲：按中间树渲染的行列表（缩进视觉 + 行内编辑） */
     .outline-body {
       flex: 1;
       overflow: auto;
-      padding: 6px 0;
+      padding: 6px 4px;
     }
     .outline-row {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 5px 12px;
+      gap: 6px;
+      padding: 5px 8px 5px calc(8px + var(--depth, 0) * 16px);
+      border-radius: 4px;
       font-size: 13px;
       white-space: nowrap;
     }
     .outline-row:hover { background: var(--btn-hover); }
-    .outline-row .grip { color: var(--muted); letter-spacing: -2px; }
-    .outline-row.depth-2 { padding-left: 30px; }
-    .outline-row.depth-3 { padding-left: 48px; }
+    .outline-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+    .outline-row.editing { background: var(--btn-hover); }
+    .outline-row .grip {
+      color: var(--muted);
+      letter-spacing: -2px;
+      cursor: grab;
+      user-select: none;
+    }
+    .outline-row .sel-box {
+      margin: 0;
+      flex: none;
+      cursor: pointer;
+    }
+    .outline-row[data-kind="heading"] .outline-text,
+    .outline-row[data-kind="heading"] .outline-input { font-weight: 600; }
+    .outline-text,
+    .outline-input {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .outline-text:empty::before {
+      content: '空节点';
+      color: var(--muted);
+      opacity: 0.6;
+    }
+    .outline-input {
+      border: none;
+      outline: none;
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+    }
+    .outline-input::placeholder { color: var(--muted); opacity: 0.6; }
+    .outline-leaf {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
     /* ⋮ 握把分隔条 */
     .gutter {
       width: 12px;
@@ -385,13 +428,7 @@
         <span class="dot"></span>
         <span>大纲</span>
       </div>
-      <div class="outline-body">
-        <div class="outline-row"><span class="grip">⠿</span><span>欢迎使用 Indentree</span></div>
-        <div class="outline-row depth-2"><span class="grip">⠿</span><span>左侧用 vim 键位编辑 Markdown</span></div>
-        <div class="outline-row depth-3"><span class="grip">⠿</span><span>按 i 进入插入模式</span></div>
-        <div class="outline-row depth-3"><span class="grip">⠿</span><span>按 Esc 返回普通模式</span></div>
-        <div class="outline-row depth-2"><span class="grip">⠿</span><span>右侧树形图实时跟随</span></div>
-      </div>
+      <div class="outline-body" id="outline-body"></div>
     </section>
     <div class="gutter" data-side="left"><span>⋮</span></div>
     <section class="col center" id="col-center" aria-label="Markdown 编辑器">
@@ -462,6 +499,16 @@
       snapPanel,
       commitDrag,
     } from './src/panel-layout.mjs';
+    import {
+      outlineRows,
+      locateNode,
+      setNodeText,
+      insertSibling,
+      indentNode,
+      outdentNode,
+      removeNode,
+      describeOutlineReason,
+    } from './src/outline.mjs';
 
     const STORAGE_KEY = 'indentree:tree-symbols';
     const THEME_KEY = 'indentree:theme';
@@ -787,20 +834,223 @@
       statusBar.classList.remove('error');
     };
 
+    // ---- 中间树：三视图共同的单一数据源 ----
+    // 编辑器与大纲的编辑都先落到它，再重渲染其它视图
+    let tree = parseMarkdown(SAMPLE);
+
     function renderTree() {
+      output.textContent = renderTreeText(tree, symbols);
+    }
+
+    // Markdown 栏编辑 → 防抖回流中间树 → 重渲染树形图与大纲
+    function syncFromEditor() {
       try {
-        output.textContent = renderTreeText(parseMarkdown(editor.getValue()), symbols);
+        tree = parseMarkdown(editor.getValue());
+        renderTree();
+        renderOutline();
         clearError();
       } catch (err) {
         showError(err instanceof MarkdownParseError ? err.line : 1);
       }
     }
 
-    // ---- 防抖同步 ----
-    let timer = null;
+    // 大纲编辑 → 防抖回流中间树 → 重写 Markdown 栏与树形图（300ms 内刷新）
+    // lastOutlineText 记录「最后一次由大纲写回编辑器的文本」，用于识别
+    // 编辑器 change 是否由本次写回触发（否则会把大纲的新改动误判成外部编辑）
+    let lastOutlineText = null;
+    let editorTimer = null;
+    let outlineTimer = null;
+    function syncFromOutline() {
+      clearTimeout(outlineTimer);
+      outlineTimer = setTimeout(() => {
+        const text = serializeMarkdown(tree);
+        if (text !== editor.getValue()) {
+          lastOutlineText = text;
+          rebuildEditor(text);
+        }
+        renderTree();
+      }, 300);
+    }
+
+    // 进入行内编辑前把挂起的 Markdown 防抖同步先落地：否则它会在稍后触发，
+    // 用编辑器里的旧文本重新解析并覆盖刚提交的大纲改动
+    function flushEditorSync() {
+      if (editorTimer === null) return; // 没有待落地的 Markdown 改动
+      clearTimeout(editorTimer);
+      editorTimer = null;
+      if (editor.getValue() === lastOutlineText) return;
+      syncFromEditor();
+    }
+
+    // ---- 大纲视图：按中间树渲染 + 行内编辑 + 结构操作 ----
+    const outlineBody = document.getElementById('outline-body');
+    let activeEdit = null; // { path, input }
+
+    const pathKey = (path) => path.join('.');
+    const parsePath = (key) => (key === '' ? [] : key.split('.').map(Number));
+
+    let statusTimer = null;
+    function flashStatus(message) {
+      clearTimeout(statusTimer);
+      statusBar.classList.remove('error');
+      statusText.textContent = message;
+      statusTimer = setTimeout(() => {
+        statusText.textContent = '就绪';
+      }, 2400);
+    }
+
+    function buildRow(row) {
+      const el = document.createElement('div');
+      el.className = 'outline-row';
+      el.dataset.path = pathKey(row.path);
+      el.dataset.kind = row.kind;
+      el.tabIndex = -1;
+      el.style.setProperty('--depth', String(row.depth));
+
+      const grip = document.createElement('span');
+      grip.className = 'grip';
+      grip.textContent = '⠿';
+      grip.setAttribute('aria-hidden', 'true');
+      el.appendChild(grip);
+
+      // 多选 checkbox 先只做视觉占位，选中语义与批量操作见 ticket 07
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.className = 'sel-box';
+      box.setAttribute('aria-label', '选择');
+      el.appendChild(box);
+
+      if (row.kind === 'leaf-block') {
+        const leaf = document.createElement('span');
+        leaf.className = 'outline-leaf';
+        const [first, ...rest] = row.text.split('\n');
+        leaf.textContent = rest.length > 0 ? `${first} ⋯ 共 ${rest.length + 1} 行` : first;
+        leaf.title = '叶子块请在 Markdown 栏编辑';
+        el.appendChild(leaf);
+        return el;
+      }
+
+      const text = document.createElement('span');
+      text.className = 'outline-text';
+      text.textContent = row.text;
+      el.appendChild(text);
+      return el;
+    }
+
+    function renderOutline({ force = false } = {}) {
+      if (activeEdit && !force) return; // 正在行内编辑时不被外部刷新打断
+      activeEdit = null;
+      outlineBody.textContent = '';
+      for (const row of outlineRows(tree)) outlineBody.appendChild(buildRow(row));
+    }
+
+    function startEdit(path) {
+      if (!Array.isArray(path)) return;
+      flushEditorSync(); // 先把挂起的 Markdown 改动落地，再按最新的树定位行
+      const rowEl = outlineBody.querySelector(`.outline-row[data-path="${pathKey(path)}"]`);
+      const loc = rowEl ? locateNode(tree, path) : null;
+      if (!rowEl || !loc || rowEl.dataset.kind === 'leaf-block') return;
+      const span = rowEl.querySelector('.outline-text');
+      if (!span) return;
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'outline-input';
+      input.value = loc.node.text;
+      input.placeholder = '输入内容…';
+      input.setAttribute('aria-label', '节点文本');
+      span.replaceWith(input);
+      rowEl.classList.add('editing');
+      activeEdit = { path, input };
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.addEventListener('keydown', (e) => onEditKeydown(e, path));
+      input.addEventListener('blur', finishEdit);
+    }
+
+    function commitEdit() {
+      if (!activeEdit) return null;
+      const { path, input } = activeEdit;
+      activeEdit = null; // 先清状态，重建 DOM 触发的 blur 不再重复提交
+      const result = setNodeText(tree, path, input.value);
+      if (result.applied) tree = result.tree;
+      return path;
+    }
+
+    function finishEdit() {
+      if (!activeEdit) return;
+      commitEdit();
+      renderOutline({ force: true });
+      syncFromOutline();
+    }
+
+    // 结构操作结果 → 中间树 + 重渲染 + 继续编辑落点
+    // （被拒绝时状态条提示，并留在原节点继续编辑）
+    function applyOutlineResult(result, currentPath) {
+      if (!result.applied) {
+        flashStatus(describeOutlineReason(result.reason));
+        renderOutline({ force: true });
+        startEdit(currentPath);
+        return;
+      }
+      tree = result.tree;
+      renderOutline({ force: true });
+      syncFromOutline();
+      if (result.path) startEdit(result.path);
+    }
+
+    function onEditKeydown(e, path) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitEdit();
+        applyOutlineResult(insertSibling(tree, path), path);
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        commitEdit();
+        applyOutlineResult(e.shiftKey ? outdentNode(tree, path) : indentNode(tree, path), path);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        finishEdit();
+      } else if (e.key === 'Backspace' && e.target.value === '') {
+        e.preventDefault();
+        activeEdit = null; // 空节点连同未提交的空文本一起删掉
+        applyOutlineResult(removeNode(tree, path), path);
+      }
+    }
+
+    // 单击行聚焦（再按 Enter 进入编辑），双击进入编辑
+    outlineBody.addEventListener('mousedown', (e) => {
+      const row = e.target.closest?.('.outline-row');
+      if (!row || e.target.closest('.outline-input')) return;
+      row.focus();
+    });
+    outlineBody.addEventListener('dblclick', (e) => {
+      const row = e.target.closest?.('.outline-row');
+      if (!row) return;
+      if (row.dataset.kind === 'leaf-block') {
+        flashStatus('叶子块请在 Markdown 栏编辑');
+        return;
+      }
+      startEdit(parsePath(row.dataset.path));
+    });
+    outlineBody.addEventListener('keydown', (e) => {
+      const row = e.target.closest?.('.outline-row');
+      if (activeEdit || !row || e.target !== row) return; // 行内编辑的按键由 input 处理
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        startEdit(parsePath(row.dataset.path));
+      }
+    });
+
+    // ---- 防抖同步：Markdown 栏改动 ----
     editor.session.on('change', () => {
-      clearTimeout(timer);
-      timer = setTimeout(renderTree, 300);
+      clearTimeout(editorTimer);
+      editorTimer = setTimeout(() => {
+        editorTimer = null;
+        // 大纲写回的文本，无需再解析回流
+        if (editor.getValue() === lastOutlineText) return;
+        syncFromEditor();
+      }, 300);
     });
 
     // 调试/验收钩子
@@ -816,6 +1066,11 @@
       editor,
       layout,
       applySide,
+      getTree: () => tree,
+      outlineRows,
+      renderOutline,
+      startEdit,
+      syncFromOutline,
     };
 
     applyTheme();
@@ -824,6 +1079,7 @@
     applySide('right');
     applyViewportMode();
     renderTree();
+    renderOutline();
   </script>
 </body>
 </html>
