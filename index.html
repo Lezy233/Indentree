@@ -460,6 +460,7 @@
       resolveLayout,
       serializeLayout,
       snapPanel,
+      commitDrag,
     } from './src/panel-layout.mjs';
 
     const STORAGE_KEY = 'indentree:tree-symbols';
@@ -687,8 +688,7 @@
     const layout = resolveLayout(loadLayoutStored());
     const persistLayout = () =>
       localStorage.setItem(LAYOUT_KEY, JSON.stringify(serializeLayout(layout)));
-    const applySide = (side) => {
-      const st = layout[side];
+    const applySide = (side, st = layout[side]) => {
       cols[side].classList.toggle('collapsed', st.collapsed);
       gutters[side].classList.toggle('collapsed', st.collapsed);
       reopens[side].classList.toggle('on', st.collapsed);
@@ -700,20 +700,26 @@
         e.preventDefault();
         const startX = e.clientX;
         const startW = layout[side].collapsed ? 0 : cols[side].getBoundingClientRect().width;
+        const widthBeforeDrag = layout[side].width; // 拖动前的恢复宽度
         document.body.style.userSelect = 'none';
         const move = (ev) => {
+          // 拖动全程只改视觉，不写 layout.width——否则拖到收起时
+          // 恢复宽度已缩水成 64px 细缝，点恢复图标拉不回原宽
+          applySide(side, snapPanel(
+            dragTargetWidth(side, startW, ev.clientX - startX),
+            window.innerWidth,
+          ));
+        };
+        const up = (ev) => {
+          removeEventListener('pointermove', move);
+          removeEventListener('pointerup', up);
+          document.body.style.userSelect = '';
           const snap = snapPanel(
             dragTargetWidth(side, startW, ev.clientX - startX),
             window.innerWidth,
           );
-          layout[side].collapsed = snap.collapsed;
-          if (!snap.collapsed) layout[side].width = snap.width; // 收起时 width 记上次展开值
+          Object.assign(layout[side], commitDrag(widthBeforeDrag, snap));
           applySide(side);
-        };
-        const up = () => {
-          removeEventListener('pointermove', move);
-          removeEventListener('pointerup', up);
-          document.body.style.userSelect = '';
           persistLayout();
         };
         addEventListener('pointermove', move);

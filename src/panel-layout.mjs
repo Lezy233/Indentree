@@ -26,6 +26,18 @@ export function snapPanel(rawWidth, viewportWidth) {
   return { collapsed: false, width: Math.min(rawWidth, viewportWidth * MAX_PANEL_RATIO) };
 }
 
+/**
+ * 拖动结束时的提交策略：拖动全程只改视觉，松手才提交。
+ * 收于展开态 → 恢复宽度更新为落点宽度；
+ * 收于收起态 → 恢复宽度保留拖动前的值（点恢复图标时回到原宽，而非 64px 细缝）。
+ */
+export function commitDrag(widthBeforeDrag, snap) {
+  return {
+    collapsed: snap.collapsed,
+    width: snap.collapsed ? widthBeforeDrag : snap.width,
+  };
+}
+
 const validWidth = (v) =>
   typeof v === 'number' && Number.isFinite(v) && v >= MIN_PANEL_WIDTH;
 

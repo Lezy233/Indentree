@@ -5,6 +5,7 @@ import {
   DEFAULT_PANEL_WIDTHS,
   dragTargetWidth,
   snapPanel,
+  commitDrag,
   resolveLayout,
   serializeLayout,
 } from '../src/panel-layout.mjs';
@@ -57,6 +58,20 @@ test('resolveLayout：合法存值保留，非法字段回退默认', () => {
 test('resolveLayout：小于最小展开宽的存值宽度回退默认', () => {
   const layout = resolveLayout({ left: { collapsed: false, width: 10 } });
   assert.equal(layout.left.width, DEFAULT_PANEL_WIDTHS.left);
+});
+
+test('commitDrag：拖动结束于展开态 → 采用落点宽度', () => {
+  assert.deepEqual(commitDrag(340, { collapsed: false, width: 200 }), {
+    collapsed: false,
+    width: 200,
+  });
+});
+
+test('commitDrag：拖动结束于收起态 → 恢复宽度保留拖动前的值', () => {
+  assert.deepEqual(commitDrag(340, { collapsed: true, width: 0 }), {
+    collapsed: true,
+    width: 340,
+  });
 });
 
 test('serializeLayout → resolveLayout 往返一致', () => {
