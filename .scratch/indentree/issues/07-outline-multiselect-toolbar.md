@@ -21,11 +21,17 @@
     验收里加了「选中不引起大纲内容偏移」的回归断言）。
   - 新增键盘：焦点在大纲行（含 checkbox）上时，Esc 取消选择、Delete 删除选中项；
     删除只要求同父、不要求连续，后代随子树一起走，删除后焦点落在前一个同级。
+    **删除手势同时认 `Delete`（PC 键盘 / Mac 的 Fn+Delete）与 `Cmd+Backspace`**——macOS 上标着 delete
+    的键（⌫）在浏览器里发的是 `Backspace`，Finder 的「移到废纸篓」正是 Cmd+⌫，只认 `Delete` 会没反应；
+    单独的 Backspace 不删（防误删）。按键挂在 document 上（行 DOM 重渲染后焦点未必还在大纲里），
+    但输入框（含行内编辑、抽屉里的符号输入）与 Ace 编辑器的按键一律不接管。
   - 纯函数随之收窄：删除 `indentNodes` / `outdentNodes` 与 `non-contiguous` 原因（缩进/取消缩进回到单节点实现，
     只服务 Tab / Shift+Tab 键盘路径）；`removeNodes` 保留（任意同父选中集）；选择模型删掉 `selectAllTopLevel`。
   - 文档：`CONTEXT.md` 的「大纲视图」词条与 `docs/adr/0001`（新增「修订 2026-10-08」一节）已同步。
-  - 验收：`node --test` 85 全绿；Edge headless + CDP 18 项全通过（含偏移回归、Esc / Delete 键盘路径、
-    非连续删除、无选择时 Delete 无副作用）；复跑 ticket 06 的 25 项无回归；浅色/深色截图各一张留档。
+  - 验收：`node --test` 85 全绿；Edge headless + CDP 24 项全通过（含偏移回归、Esc / Delete /
+    Cmd+Backspace / Ctrl+Backspace、单独 Backspace 不误删、焦点在 Ace 或行内编辑框时不抢按键、
+    行重渲染后焦点丢失仍可用、非连续删除、无选择时 Delete 无副作用）；复跑 ticket 06 的 25 项无回归；
+    浅色/深色截图各一张留档。
 
 - 2026-10-08 首次实现完成（其中工具栏与全选部分已被上面的修订取代）：
   - **vendor**：`vendor/sortablejs/`（SortableJS 1.15.7 的 complete build，一次性 esbuild 压成 46 KB 单文件 ESM，

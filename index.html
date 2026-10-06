@@ -455,7 +455,7 @@
       <div class="panel-header">
         <span class="dot"></span>
         <span>大纲</span>
-        <button type="button" id="outline-clear-selection" title="取消选择（Esc）" hidden>取消选择</button>
+        <button type="button" id="outline-clear-selection" title="取消选择（Esc）；删除选中项：Delete 或 ⌘⌫" hidden>取消选择</button>
       </div>
       <div class="outline-body" id="outline-body"></div>
     </section>
@@ -1128,10 +1128,30 @@
       if (e.key === 'Enter' && e.target === row) {
         e.preventDefault();
         startEdit(parsePath(row.dataset.path));
-      } else if (e.key === 'Escape' && selection.paths.length > 0) {
+      }
+    });
+
+    // 只放行「非文本录入」的按键：checkbox / 普通元素可以，输入框与 Ace 编辑器不接管
+    function isTextEntryTarget(target) {
+      const el = target?.closest?.('input, textarea, select, [contenteditable="true"], #ace-editor');
+      if (!el) return false;
+      return !(el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio'));
+    }
+
+    // 删除手势：Delete（PC 键盘 / Mac 的 Fn+Delete）与 Cmd+Backspace
+    // —— macOS 上标着 delete 的键（⌫）在浏览器里是 Backspace，Finder 的「移到废纸篓」
+    // 正是 Cmd+⌫，所以这两种形态都要认
+    const isDeleteGesture = (e) =>
+      e.key === 'Delete' || (e.key === 'Backspace' && (e.metaKey || e.ctrlKey));
+
+    // 挂在 document 上：行 DOM 会被重渲染替换，焦点未必还落在大纲里；
+    // 但正在输入（大纲行内编辑 / Markdown 栏）的按键一律不接管
+    document.addEventListener('keydown', (e) => {
+      if (selection.paths.length === 0 || isTextEntryTarget(e.target)) return;
+      if (e.key === 'Escape') {
         e.preventDefault();
         clearSelection();
-      } else if (e.key === 'Delete' && selection.paths.length > 0) {
+      } else if (isDeleteGesture(e)) {
         e.preventDefault();
         removeSelection();
       }
