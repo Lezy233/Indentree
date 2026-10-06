@@ -8,9 +8,14 @@ import {
   setNodeText,
   insertSibling,
   indentNode,
+  indentNodes,
   outdentNode,
+  outdentNodes,
   removeNode,
+  removeNodes,
   describeOutlineReason,
+  pathKey,
+  comparePaths,
 } from '../src/outline.mjs';
 
 // 结构等价比较：忽略对象身份，递归比对 kind / text / level / children
@@ -76,7 +81,7 @@ test('insertSibling：列表项后新建空同级并返回新路径', () => {
   const tree = treeOf(['- a', '- b']);
   const res = insertSibling(tree, [0]);
   assert.equal(res.applied, true);
-  assert.deepEqual(res.path, [1]);
+  assert.deepEqual(res.paths, [[1]]);
   assert.equal(serializeMarkdown(res.tree), ['- a', '- ', '- b'].join('\n'));
 });
 
@@ -91,7 +96,7 @@ test('indentNode：成为前一个同级节点的子级', () => {
   const tree = treeOf(['- a', '- b']);
   const res = indentNode(tree, [1]);
   assert.equal(res.applied, true);
-  assert.deepEqual(res.path, [0, 0]);
+  assert.deepEqual(res.paths, [[0, 0]]);
   assert.equal(serializeMarkdown(res.tree), ['- a', '  - b'].join('\n'));
   assertStable(res.tree);
 });
@@ -138,7 +143,7 @@ test('outdentNode：移到祖父级、紧随原父级之后', () => {
   const tree = treeOf(['- a', '  - b']);
   const res = outdentNode(tree, [0, 0]);
   assert.equal(res.applied, true);
-  assert.deepEqual(res.path, [1]);
+  assert.deepEqual(res.paths, [[1]]);
   assert.equal(serializeMarkdown(res.tree), ['- a', '- b'].join('\n'));
   assertStable(res.tree);
 });
@@ -162,7 +167,7 @@ test('outdentNode：标题取消缩进到二级标题下时跟着降级', () => 
   const tree = treeOf(['# A', '', '## B', '', '### C']);
   const res = outdentNode(tree, [0, 0, 0]);
   assert.equal(res.applied, true);
-  assert.deepEqual(res.path, [0, 1]);
+  assert.deepEqual(res.paths, [[0, 1]]);
   assert.equal(serializeMarkdown(res.tree), ['# A', '', '## B', '', '## C'].join('\n'));
   assertStable(res.tree);
 });
@@ -223,7 +228,7 @@ test('removeNode：删除节点并给出后继焦点路径', () => {
   const tree = treeOf(['- a', '- b', '- c']);
   const res = removeNode(tree, [1]);
   assert.equal(res.applied, true);
-  assert.deepEqual(res.path, [0]);
+  assert.deepEqual(res.paths, [[0]]);
   assert.equal(serializeMarkdown(res.tree), ['- a', '- c'].join('\n'));
 });
 
@@ -231,7 +236,7 @@ test('removeNode：删除唯一节点后无焦点路径', () => {
   const tree = treeOf(['- a']);
   const res = removeNode(tree, [0]);
   assert.equal(res.applied, true);
-  assert.equal(res.path, null);
+  assert.deepEqual(res.paths, []);
   assert.equal(serializeMarkdown(res.tree), '');
 });
 
@@ -242,7 +247,7 @@ test('结构操作：缩进 / 取消缩进 / 新建后 markdown 按 kind 正确�
     serializeMarkdown(indented.tree),
     ['# 题单', '', '- 第一章', '  - 1.1', '  - 第二章'].join('\n'),
   );
-  const outdented = outdentNode(indented.tree, indented.path); // 再取消缩进
+  const outdented = outdentNode(indented.tree, indented.paths[0]); // 再取消缩进
   assert.equal(serializeMarkdown(outdented.tree), serializeMarkdown(tree));
   assertStable(outdented.tree);
 });
@@ -250,6 +255,8 @@ test('结构操作：缩进 / 取消缩进 / 新建后 markdown 按 kind 正确�
 test('describeOutlineReason：覆盖全部拒绝原因', () => {
   for (const reason of [
     'first-sibling',
+    'non-contiguous',
+    'not-siblings',
     'unrepresentable',
     'heading-depth-limit',
     'already-top-level',
@@ -257,4 +264,115 @@ test('describeOutlineReason：覆盖全部拒绝原因', () => {
     assert.equal(typeof describeOutlineReason(reason), 'string');
     assert.ok(describeOutlineReason(reason).length > 0);
   }
+});
+
+test('pathKey / comparePaths：路径的规范字符串与文档顺序', () => {
+  assert.equal(pathKey([0, 2, 1]), '0.2.1');
+  const paths = [[1], [0, 2], [0], [0, 1]];
+  assert.deepEqual([...paths].sort(comparePaths), [[0], [0, 1], [0, 2], [1]]);
+});
+
+// ---- 批量（多选）结构操作：同父 + 连续 ----
+
+test('indentNodes：整段连续节点一起缩进到前一个同级之下', () => {
+  const tree = treeOf(['- a', '- b', '- c']);
+  const res = indentNodes(tree, [[1], [2]]);
+  assert.equal(res.applied, true);
+  assert.deepEqual(res.paths, [[0, 0], [0, 1]]);
+  assert.equal(serializeMarkdown(res.tree), ['- a', '  - b', '  - c'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('indentNodes：选中父节点时整棵子树跟随', () => {
+  const tree = treeOf(['- a', '- b', '  - b1', '- c']);
+  const res = indentNodes(tree, [[1], [2]]);
+  assert.equal(res.applied, true);
+  assert.equal(serializeMarkdown(res.tree), ['- a', '  - b', '    - b1', '  - c'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('indentNodes：标题块按新父级重定级', () => {
+  const tree = treeOf(['# A', '', '# B', '', '# C']);
+  const res = indentNodes(tree, [[1], [2]]);
+  assert.equal(res.applied, true);
+  assert.equal(serializeMarkdown(res.tree), ['# A', '', '## B', '', '## C'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('indentNodes：跨父级多选被拒（同父约束）', () => {
+  const tree = treeOf(['- a', '  - b', '- c']);
+  const res = indentNodes(tree, [[0, 0], [1]]);
+  assert.equal(res.applied, false);
+  assert.equal(res.reason, 'not-siblings');
+  assert.equal(res.tree, tree);
+});
+
+test('indentNodes：非连续多选被拒', () => {
+  const tree = treeOf(['- a', '- b', '- c']);
+  const res = indentNodes(tree, [[0], [2]]);
+  assert.equal(res.applied, false);
+  assert.equal(res.reason, 'non-contiguous');
+});
+
+test('indentNodes：整段从第一个同级开始时无法缩进', () => {
+  const tree = treeOf(['- a', '- b']);
+  const res = indentNodes(tree, [[0], [1]]);
+  assert.equal(res.applied, false);
+  assert.equal(res.reason, 'first-sibling');
+});
+
+test('outdentNodes：整段连续节点一起取消缩进', () => {
+  const tree = treeOf(['- a', '  - b', '  - c']);
+  const res = outdentNodes(tree, [[0, 0], [0, 1]]);
+  assert.equal(res.applied, true);
+  assert.deepEqual(res.paths, [[1], [2]]);
+  assert.equal(serializeMarkdown(res.tree), ['- a', '- b', '- c'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('outdentNodes：顶层多选无法取消缩进', () => {
+  const tree = treeOf(['- a', '- b']);
+  const res = outdentNodes(tree, [[0], [1]]);
+  assert.equal(res.applied, false);
+  assert.equal(res.reason, 'already-top-level');
+});
+
+test('outdentNodes：标题小节吞掉同级块时整段拒绝', () => {
+  const tree = treeOf(['# A', '', '- a', '- b']);
+  const res = outdentNodes(tree, [[0, 0], [0, 1]]);
+  assert.equal(res.applied, false);
+  assert.equal(res.reason, 'unrepresentable');
+});
+
+test('removeNodes：批量删除整段并给出落点', () => {
+  const tree = treeOf(['- a', '- b', '- c', '- d']);
+  const res = removeNodes(tree, [[1], [2]]);
+  assert.equal(res.applied, true);
+  assert.deepEqual(res.paths, [[0]]);
+  assert.equal(serializeMarkdown(res.tree), ['- a', '- d'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('removeNodes：非连续同父多选也能删（删除不要求连续）', () => {
+  const tree = treeOf(['- a', '- b', '- c', '- d']);
+  const res = removeNodes(tree, [[0], [2]]);
+  assert.equal(res.applied, true);
+  assert.deepEqual(res.paths, [[0]]);
+  assert.equal(serializeMarkdown(res.tree), ['- b', '- d'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('removeNodes：删除含子树的节点时后代一起走', () => {
+  const tree = treeOf(['- a', '- b', '  - b1', '- c']);
+  const res = removeNodes(tree, [[1]]);
+  assert.equal(res.applied, true);
+  assert.equal(serializeMarkdown(res.tree), ['- a', '- c'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('removeNodes：跨父级多选被拒', () => {
+  const tree = treeOf(['- a', '  - b', '- c']);
+  const res = removeNodes(tree, [[0, 0], [1]]);
+  assert.equal(res.applied, false);
+  assert.equal(res.reason, 'not-siblings');
 });

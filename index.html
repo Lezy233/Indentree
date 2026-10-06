@@ -96,7 +96,7 @@
       border-radius: 50%;
       background: var(--accent);
     }
-    /* 左栏大纲：按中间树渲染的行列表（缩进视觉 + 行内编辑） */
+    /* 左栏大纲：按中间树渲染的行列表（缩进视觉 + 行内编辑 + 多选） */
     .outline-body {
       flex: 1;
       overflow: auto;
@@ -114,6 +114,15 @@
     .outline-row:hover { background: var(--btn-hover); }
     .outline-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
     .outline-row.editing { background: var(--btn-hover); }
+    /* 选中态：显式选中强调色，后代「跟随选中」淡一档（同父约束下的整棵子树） */
+    .outline-row.selected {
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+    .outline-row.selected:hover {
+      background: color-mix(in srgb, var(--accent) 24%, transparent);
+    }
+    .outline-row.implied { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+    .outline-row.implied .sel-box { opacity: 0.55; pointer-events: none; }
     .outline-row .grip {
       color: var(--muted);
       letter-spacing: -2px;
@@ -125,6 +134,38 @@
       flex: none;
       cursor: pointer;
     }
+    /* 「n selected」浮动工具栏：选中 ≥1 项时才出现 */
+    .outline-toolbar {
+      display: none;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--border-soft);
+      background: color-mix(in srgb, var(--accent) 10%, var(--panel-bg));
+      font-size: 11px;
+      color: var(--fg);
+    }
+    .outline-toolbar.on { display: flex; }
+    .outline-toolbar #selection-count {
+      white-space: nowrap;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .outline-toolbar button,
+    #outline-select-all {
+      border: 1px solid var(--border);
+      background: var(--btn-bg);
+      color: var(--fg);
+      font-size: 11px;
+      padding: 2px 5px;
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .outline-toolbar button:hover,
+    #outline-select-all:hover { background: var(--btn-hover); }
+    #outline-select-all { margin-left: auto; }
     .outline-row[data-kind="heading"] .outline-text,
     .outline-row[data-kind="heading"] .outline-input { font-weight: 600; }
     .outline-text,
@@ -427,6 +468,14 @@
       <div class="panel-header">
         <span class="dot"></span>
         <span>大纲</span>
+        <button type="button" id="outline-select-all" title="全选所有顶级节点">全选</button>
+      </div>
+      <div class="outline-toolbar" id="outline-toolbar">
+        <span id="selection-count">0 selected</span>
+        <button type="button" data-act="indent" title="整体缩进">缩进</button>
+        <button type="button" data-act="outdent" title="整体取消缩进">取消缩进</button>
+        <button type="button" data-act="remove" title="删除选中项（含子树）">删除</button>
+        <button type="button" data-act="clear" title="清除选择">✕</button>
       </div>
       <div class="outline-body" id="outline-body"></div>
     </section>
@@ -507,8 +556,22 @@
       indentNode,
       outdentNode,
       removeNode,
+      indentNodes,
+      outdentNodes,
+      removeNodes,
       describeOutlineReason,
+      pathKey,
+      parsePath,
     } from './src/outline.mjs';
+    import {
+      emptySelection,
+      toggleSelection,
+      extendSelection,
+      selectAllTopLevel,
+      impliedSelection,
+      pruneSelection,
+      describeSelectionHint,
+    } from './src/outline-selection.mjs';
 
     const STORAGE_KEY = 'indentree:tree-symbols';
     const THEME_KEY = 'indentree:theme';
@@ -882,12 +945,12 @@
       syncFromEditor();
     }
 
-    // ---- 大纲视图：按中间树渲染 + 行内编辑 + 结构操作 ----
+    // ---- 大纲视图：按中间树渲染 + 行内编辑 + 多选 + 结构操作 ----
     const outlineBody = document.getElementById('outline-body');
+    const outlineToolbar = document.getElementById('outline-toolbar');
+    const selectionCount = document.getElementById('selection-count');
     let activeEdit = null; // { path, input }
-
-    const pathKey = (path) => path.join('.');
-    const parsePath = (key) => (key === '' ? [] : key.split('.').map(Number));
+    let selection = emptySelection(); // { paths, anchor }，同父约束见 ADR-0001
 
     let statusTimer = null;
     function flashStatus(message) {
@@ -897,6 +960,33 @@
       statusTimer = setTimeout(() => {
         statusText.textContent = '就绪';
       }, 2400);
+    }
+
+    // 把选择状态写进 DOM（行高亮 / checkbox / 工具栏），不重建行——保住滚动位置
+    function applySelectionVisuals(rows = outlineRows(tree)) {
+      const explicit = new Set(selection.paths.map(pathKey));
+      const implied = new Set(impliedSelection(rows, selection).map(pathKey));
+      for (const el of outlineBody.children) {
+        const key = el.dataset.path;
+        el.classList.toggle('selected', explicit.has(key));
+        el.classList.toggle('implied', implied.has(key));
+        const box = el.querySelector('.sel-box');
+        if (box) box.checked = explicit.has(key) || implied.has(key);
+      }
+      selectionCount.textContent = `${selection.paths.length} selected`;
+      outlineToolbar.classList.toggle('on', selection.paths.length > 0);
+    }
+
+    // 选择变化的统一入口：状态 + 视觉 + 提示
+    function applySelection(next, hint) {
+      selection = next;
+      applySelectionVisuals();
+      const message = describeSelectionHint(hint);
+      if (message) flashStatus(message);
+    }
+
+    function clearSelection() {
+      applySelection(emptySelection(), null);
     }
 
     function buildRow(row) {
@@ -913,11 +1003,11 @@
       grip.setAttribute('aria-hidden', 'true');
       el.appendChild(grip);
 
-      // 多选 checkbox 先只做视觉占位，选中语义与批量操作见 ticket 07
+      // 多选 checkbox：同父约束下点选切换；后代「跟随选中」由 applySelectionVisuals 标灰
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.className = 'sel-box';
-      box.setAttribute('aria-label', '选择');
+      box.setAttribute('aria-label', row.text ? `选择：${row.text.split('\n')[0]}` : '选择空节点');
       el.appendChild(box);
 
       if (row.kind === 'leaf-block') {
@@ -940,8 +1030,11 @@
     function renderOutline({ force = false } = {}) {
       if (activeEdit && !force) return; // 正在行内编辑时不被外部刷新打断
       activeEdit = null;
+      const rows = outlineRows(tree);
+      selection = pruneSelection(rows, selection); // 树变了，丢掉失效的选择
       outlineBody.textContent = '';
-      for (const row of outlineRows(tree)) outlineBody.appendChild(buildRow(row));
+      for (const row of rows) outlineBody.appendChild(buildRow(row));
+      applySelectionVisuals(rows);
     }
 
     function startEdit(path) {
@@ -996,7 +1089,32 @@
       tree = result.tree;
       renderOutline({ force: true });
       syncFromOutline();
-      if (result.path) startEdit(result.path);
+      if (result.paths[0]) startEdit(result.paths[0]);
+    }
+
+    // 工具栏批量操作：整段缩进 / 取消缩进 / 删除（同父 + 连续，见 ADR-0001）
+    const BATCH_OPS = {
+      indent: indentNodes,
+      outdent: outdentNodes,
+      remove: removeNodes,
+    };
+
+    function runBatchOperation(act) {
+      const op = BATCH_OPS[act]; // 未知 data-act 直接忽略，绝不能落到删除
+      if (!op || selection.paths.length === 0) return;
+      const result = op(tree, selection.paths);
+      if (!result.applied) {
+        flashStatus(describeOutlineReason(result.reason));
+        return;
+      }
+      tree = result.tree;
+      // 删除后清空选择；整体移动后选中项跟着落到新位置，方便连续调整
+      selection =
+        op === removeNodes
+          ? emptySelection()
+          : { paths: result.paths, anchor: result.paths[0] ?? null };
+      renderOutline({ force: true });
+      syncFromOutline();
     }
 
     function onEditKeydown(e, path) {
@@ -1039,7 +1157,40 @@
       if (e.key === 'Enter') {
         e.preventDefault();
         startEdit(parsePath(row.dataset.path));
+      } else if (e.key === 'Escape' && selection.paths.length > 0) {
+        e.preventDefault();
+        clearSelection();
       }
+    });
+
+    // checkbox 点选切换；Shift 连选（同父约束 + 越界截断）
+    outlineBody.addEventListener('click', (e) => {
+      const box = e.target.closest?.('.sel-box');
+      if (!box) return;
+      const row = box.closest('.outline-row');
+      const path = parsePath(row.dataset.path);
+      const rows = outlineRows(tree);
+      const result = e.shiftKey
+        ? extendSelection(rows, selection, path)
+        : toggleSelection(selection, path);
+      applySelection(result.selection, result.hint);
+    });
+
+    // 全选 = 所有顶级节点（同父；后代跟随）
+    document.getElementById('outline-select-all').addEventListener('click', () => {
+      const result = selectAllTopLevel(outlineRows(tree));
+      if (result.selection.paths.length === 0) {
+        flashStatus('当前没有可选的节点');
+        return;
+      }
+      applySelection(result.selection, result.hint);
+    });
+
+    outlineToolbar.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      if (btn.dataset.act === 'clear') clearSelection();
+      else runBatchOperation(btn.dataset.act);
     });
 
     // ---- 防抖同步：Markdown 栏改动 ----
@@ -1071,6 +1222,10 @@
       renderOutline,
       startEdit,
       syncFromOutline,
+      getSelection: () => selection,
+      applySelection,
+      clearSelection,
+      runBatchOperation,
     };
 
     applyTheme();

@@ -46,7 +46,7 @@ export function setNodeText(root, path, text) {
   if (!locateNode(root, path)) return blocked(root, 'invalid-path');
   const tree = cloneTree(root);
   locateNode(tree, path).node.text = text;
-  return { tree, applied: true, path, reason: null };
+  return { tree, applied: true, paths: [path], reason: null };
 }
 
 /** 新建同级节点：沿用原节点的 kind（标题连 level 一起沿用） */
@@ -58,88 +58,88 @@ export function insertSibling(root, path) {
   const created = { kind: target.node.kind, text: '', children: [] };
   if (target.node.kind === 'heading') created.level = target.node.level;
   target.parent.children.splice(target.index + 1, 0, created);
-  return {
-    tree,
-    applied: true,
-    path: [...path.slice(0, -1), target.index + 1],
-    reason: null,
-  };
+  return { tree, applied: true, paths: [[...path.slice(0, -1), target.index + 1]], reason: null };
 }
 
-/** 缩进：成为前一个同级节点的最后一个子级（品类习惯：只向右缩一级） */
-export function indentNode(root, path) {
-  const loc = locateNode(root, path);
-  if (!loc) return blocked(root, 'invalid-path');
-  if (loc.index === 0) return blocked(root, 'first-sibling');
-
+/**
+ * 缩进一组同级连续节点：整体成为前一个同级节点的最后几个子级。
+ * paths 必须是同一父级下、下标连续的一段（多选的同父约束，见 ADR-0001）。
+ */
+export function indentNodes(root, paths) {
   const tree = cloneTree(root);
-  const target = locateNode(tree, path);
-  const prev = target.parent.children[target.index - 1];
-  const prevPath = [...path.slice(0, -1), loc.index - 1];
-  target.parent.children.splice(target.index, 1);
-  prev.children.push(target.node);
-  if (target.node.kind === 'heading') {
-    const level = prev.kind === 'heading' ? prev.level + 1 : target.node.level;
-    shiftHeadingLevels(target.node, level - target.node.level);
-  }
+  const block = resolveBlock(tree, paths);
+  if (block.reason) return blocked(root, block.reason);
+  if (block.start === 0) return blocked(root, 'first-sibling');
+
+  const prevPath = [...block.parentPath, block.start - 1];
+  const prev = parentAt(tree, prevPath);
+  const moved = block.parent.children.splice(block.start, block.count);
+  prev.children.push(...moved);
+  adjustHeadingLevels(moved, prev);
   const reason = unrepresentable(root, tree, prevPath);
   if (reason) return blocked(root, reason);
+  const offset = prev.children.length - moved.length;
   return {
     tree,
     applied: true,
-    path: [...prevPath, prev.children.length - 1],
+    paths: moved.map((_, i) => [...prevPath, offset + i]),
     reason: null,
   };
 }
 
-/** 取消缩进：移到祖父级、紧随原父级之后 */
-export function outdentNode(root, path) {
-  if (path.length <= 1) return blocked(root, 'already-top-level');
-  const loc = locateNode(root, path);
-  if (!loc) return blocked(root, 'invalid-path');
-
-  const newParentPath = path.slice(0, -2);
+/** 取消缩进一组同级连续节点：整体移到祖父级、紧随原父级之后 */
+export function outdentNodes(root, paths) {
   const tree = cloneTree(root);
-  const target = locateNode(tree, path);
-  const oldParent = locateNode(tree, path.slice(0, -1)); // { parent: 新父级, index, node: 原父级 }
-  const newParent = oldParent.parent;
-  const insertIndex = oldParent.index + 1;
-  target.parent.children.splice(target.index, 1);
-  newParent.children.splice(insertIndex, 0, target.node);
+  const block = resolveBlock(tree, paths);
+  if (block.reason) return blocked(root, block.reason);
+  if (block.parentPath.length === 0) return blocked(root, 'already-top-level');
 
-  if (target.node.kind === 'heading') {
-    const parent = parentAt(tree, newParentPath);
-    // 顶层标题降为一级；标题父级下跟到父级 +1；列表项里层级不再约束，保持不变
-    const level =
-      parent.kind === 'heading' ? parent.level + 1 : parent.kind === 'root' ? 1 : target.node.level;
-    if (level !== target.node.level) shiftHeadingLevels(target.node, level - target.node.level);
-  }
+  const newParentPath = block.parentPath.slice(0, -1);
+  const newParent = parentAt(tree, newParentPath);
+  const insertIndex = locateNode(tree, block.parentPath).index + 1;
+  const moved = block.parent.children.splice(block.start, block.count);
+  newParent.children.splice(insertIndex, 0, ...moved);
+  adjustHeadingLevels(moved, newParent);
   const reason = unrepresentable(root, tree, newParentPath);
   if (reason) return blocked(root, reason);
-  return { tree, applied: true, path: [...newParentPath, insertIndex], reason: null };
-}
-
-/** 删除节点，返回操作后应聚焦的路径（优先前一个同级，其次占位的下一个） */
-export function removeNode(root, path) {
-  const loc = locateNode(root, path);
-  if (!loc) return blocked(root, 'invalid-path');
-  const tree = cloneTree(root);
-  const target = locateNode(tree, path);
-  target.parent.children.splice(target.index, 1);
-  const parentPath = path.slice(0, -1);
-  const parent = parentAt(tree, parentPath);
-  const focusIndex = target.index > 0 ? target.index - 1 : parent.children.length > 0 ? 0 : null;
   return {
     tree,
     applied: true,
-    path: focusIndex === null ? null : [...parentPath, focusIndex],
+    paths: moved.map((_, i) => [...newParentPath, insertIndex + i]),
     reason: null,
   };
 }
+
+/** 删除一组同父节点（不要求连续）：整棵子树跟着走 */
+export function removeNodes(root, paths) {
+  const tree = cloneTree(root);
+  const siblings = resolveSiblings(tree, paths);
+  if (siblings.reason) return blocked(root, siblings.reason);
+  // 从后往前删，前面的下标不失效
+  for (const index of [...siblings.indices].reverse()) {
+    siblings.parent.children.splice(index, 1);
+  }
+  const first = siblings.indices[0];
+  const rest = siblings.parent.children.length;
+  const focusIndex = first > 0 ? first - 1 : rest > 0 ? 0 : null;
+  return {
+    tree,
+    applied: true,
+    paths: focusIndex === null ? [] : [[...siblings.parentPath, focusIndex]],
+    reason: null,
+  };
+}
+
+/** 单节点便捷包装（键盘操作） */
+export const indentNode = (root, path) => indentNodes(root, [path]);
+export const outdentNode = (root, path) => outdentNodes(root, [path]);
+export const removeNode = (root, path) => removeNodes(root, [path]);
 
 /** 拒绝原因 → 状态条文案 */
 const REASON_TEXT = Object.freeze({
   'first-sibling': '首个同级节点没有可缩进的目标',
+  'non-contiguous': '整体缩进/取消缩进需连续选中同一父级的节点',
+  'not-siblings': '多选需同一父级（同父约束）',
   unrepresentable: '该位置无法在 Markdown 中还原，操作已取消',
   'heading-depth-limit': '标题层级超出 1–6 级，无法还原',
   'already-top-level': '已在顶层，无法取消缩进',
@@ -151,14 +151,69 @@ export function describeOutlineReason(reason) {
 
 // ---- 内部工具 ----
 
-const blocked = (tree, reason) => ({ tree, applied: false, path: null, reason });
+const blocked = (tree, reason) => ({ tree, applied: false, paths: [], reason });
 
 const cloneTree = (node) => ({ ...node, children: node.children.map(cloneTree) });
+
+/** 路径的规范字符串形式（DOM data-path / 集合键都用它） */
+export const pathKey = (path) => path.join('.');
+
+/** pathKey 的逆：'0.2.1' → [0, 2, 1]（空串 → []） */
+export const parsePath = (key) => (key === '' ? [] : key.split('.').map(Number));
+
+/** 文档顺序比较两条路径 */
+export function comparePaths(a, b) {
+  for (let i = 0; i < Math.min(a.length, b.length); i += 1) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return a.length - b.length;
+}
+
+export const samePath = (a, b) => pathKey(a) === pathKey(b);
 
 /** 父节点路径 → 节点；空路径表示虚拟根 */
 function parentAt(root, path) {
   if (path.length === 0) return root;
   return locateNode(root, path)?.node ?? null;
+}
+
+/** 同父选中集（不要求连续）：{ parentPath, parent, indices } 或 { reason } */
+function resolveSiblings(tree, paths) {
+  if (!Array.isArray(paths) || paths.length === 0) return { reason: 'invalid-path' };
+  const sorted = [...paths].sort(comparePaths);
+  const parentPath = sorted[0].slice(0, -1);
+  const indices = [];
+  for (const path of sorted) {
+    const loc = locateNode(tree, path);
+    if (!loc) return { reason: 'invalid-path' };
+    if (!samePath(path.slice(0, -1), parentPath)) return { reason: 'not-siblings' };
+    indices.push(loc.index);
+  }
+  return { parentPath, parent: parentAt(tree, parentPath), indices };
+}
+
+/**
+ * 同父连续选中段——整体缩进/取消缩进按段移动的前提。
+ * 返回 { parentPath, parent, indices, start, count } 或 { reason }。
+ */
+function resolveBlock(tree, paths) {
+  const siblings = resolveSiblings(tree, paths);
+  if (siblings.reason) return siblings;
+  const { indices } = siblings;
+  for (let i = 1; i < indices.length; i += 1) {
+    if (indices[i] !== indices[i - 1] + 1) return { reason: 'non-contiguous' };
+  }
+  return { ...siblings, start: indices[0], count: indices.length };
+}
+
+/** 整块换到新父级后，标题按新父级重定级（顶层降为一级；列表项里层级不再约束） */
+function adjustHeadingLevels(nodes, newParent) {
+  for (const node of nodes) {
+    if (node.kind !== 'heading') continue;
+    const level =
+      newParent.kind === 'heading' ? newParent.level + 1 : newParent.kind === 'root' ? 1 : node.level;
+    if (level !== node.level) shiftHeadingLevels(node, level - node.level);
+  }
 }
 
 function maxHeadingLevel(node) {
