@@ -7,7 +7,6 @@ import {
   emptySelection,
   toggleSelection,
   extendSelection,
-  selectAllTopLevel,
   isSelected,
   impliedSelection,
   pruneSelection,
@@ -93,20 +92,6 @@ test('extendSelection：没有锚点时等价于点选', () => {
   assert.equal(hint, null);
   assert.deepEqual(keys(selection.paths), ['1']);
   assert.deepEqual(selection.anchor, [1]);
-});
-
-test('selectAllTopLevel：选中所有顶级节点，后代跟随', () => {
-  const rows = fixture();
-  const { selection } = selectAllTopLevel(rows);
-  assert.deepEqual(keys(selection.paths), ['0', '1', '2']);
-  assert.deepEqual(selection.anchor, [0]);
-  assert.deepEqual(keys(impliedSelection(rows, selection)), ['0.0', '0.1']);
-});
-
-test('selectAllTopLevel：空树得到空选择', () => {
-  const { selection } = selectAllTopLevel(outlineRows(parseMarkdown('')));
-  assert.deepEqual(selection.paths, []);
-  assert.equal(selection.anchor, null);
 });
 
 test('impliedSelection：后代跟随（含多级），不含选中项自身', () => {

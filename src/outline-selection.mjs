@@ -5,8 +5,8 @@ import { comparePaths, pathKey, samePath } from './outline.mjs';
  * - **同父约束**：选中集必须共享同一父节点；跨父级的点选会把选择改为该项并提示。
  * - **选中父节点即等效选中整棵子树**：后代不单独勾选，但计入操作范围与视觉（implied）。
  * - **Shift 连选只取同级**：越界部分截断到锚点所在父级，并在状态条提示。
- * - **全选 = 所有顶级节点**（同父，后代跟随）。
  *
+ * 多选只服务两件事：批量拖拽（ticket 08）与批量删除（Delete 键）。
  * 选择状态：{ paths: 路径数组（文档顺序）, anchor: 最后一次点选的路径 | null }
  */
 
@@ -59,12 +59,6 @@ export function extendSelection(rows, selection, path) {
     .map((r) => r.path);
   const clipped = !paths.some((p) => samePath(p, path));
   return { selection: { paths, anchor }, hint: clipped ? 'range-clipped' : null };
-}
-
-/** 全选：所有顶级节点（顶级节点天然同父；后代跟随） */
-export function selectAllTopLevel(rows) {
-  const paths = rows.filter((r) => r.depth === 0).map((r) => r.path);
-  return { selection: { paths, anchor: paths[0] ?? null }, hint: null };
 }
 
 /** 路径是否被显式选中 */

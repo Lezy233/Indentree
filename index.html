@@ -134,38 +134,24 @@
       flex: none;
       cursor: pointer;
     }
-    /* 「n selected」浮动工具栏：选中 ≥1 项时才出现 */
-    .outline-toolbar {
-      display: none;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 4px;
-      padding: 5px 8px;
-      border-bottom: 1px solid var(--border-soft);
-      background: color-mix(in srgb, var(--accent) 10%, var(--panel-bg));
-      font-size: 11px;
-      color: var(--fg);
-    }
-    .outline-toolbar.on { display: flex; }
-    .outline-toolbar #selection-count {
-      white-space: nowrap;
-      color: var(--accent);
-      font-weight: 600;
-    }
-    .outline-toolbar button,
-    #outline-select-all {
+    /* 「取消选择」只在有选中项时出现（多选入口只服务批量删除 / 拖拽）。
+       绝对定位是为了不改变标题栏高度——选中时大纲内容不能整体偏移 */
+    #outline-clear-selection {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
       border: 1px solid var(--border);
       background: var(--btn-bg);
       color: var(--fg);
       font-size: 11px;
-      padding: 2px 5px;
+      line-height: 1;
+      padding: 3px 6px;
       border-radius: 4px;
       cursor: pointer;
       white-space: nowrap;
     }
-    .outline-toolbar button:hover,
-    #outline-select-all:hover { background: var(--btn-hover); }
-    #outline-select-all { margin-left: auto; }
+    #outline-clear-selection:hover { background: var(--btn-hover); }
     .outline-row[data-kind="heading"] .outline-text,
     .outline-row[data-kind="heading"] .outline-input { font-weight: 600; }
     .outline-text,
@@ -355,6 +341,7 @@
       border-bottom: 1px solid var(--border-soft);
       font-size: 12px;
       color: var(--muted);
+      position: relative; /* 「取消选择」绝对定位，出现/消失不改变标题栏高度 */
     }
     #drawer-toggle {
       margin-left: auto;
@@ -468,14 +455,7 @@
       <div class="panel-header">
         <span class="dot"></span>
         <span>大纲</span>
-        <button type="button" id="outline-select-all" title="全选所有顶级节点">全选</button>
-      </div>
-      <div class="outline-toolbar" id="outline-toolbar">
-        <span id="selection-count">0 selected</span>
-        <button type="button" data-act="indent" title="整体缩进">缩进</button>
-        <button type="button" data-act="outdent" title="整体取消缩进">取消缩进</button>
-        <button type="button" data-act="remove" title="删除选中项（含子树）">删除</button>
-        <button type="button" data-act="clear" title="清除选择">✕</button>
+        <button type="button" id="outline-clear-selection" title="取消选择（Esc）" hidden>取消选择</button>
       </div>
       <div class="outline-body" id="outline-body"></div>
     </section>
@@ -556,8 +536,6 @@
       indentNode,
       outdentNode,
       removeNode,
-      indentNodes,
-      outdentNodes,
       removeNodes,
       describeOutlineReason,
       pathKey,
@@ -567,7 +545,6 @@
       emptySelection,
       toggleSelection,
       extendSelection,
-      selectAllTopLevel,
       impliedSelection,
       pruneSelection,
       describeSelectionHint,
@@ -945,10 +922,9 @@
       syncFromEditor();
     }
 
-    // ---- 大纲视图：按中间树渲染 + 行内编辑 + 多选 + 结构操作 ----
+    // ---- 大纲视图：按中间树渲染 + 行内编辑 + 多选（批量删除 / 拖拽入口）----
     const outlineBody = document.getElementById('outline-body');
-    const outlineToolbar = document.getElementById('outline-toolbar');
-    const selectionCount = document.getElementById('selection-count');
+    const clearSelectionButton = document.getElementById('outline-clear-selection');
     let activeEdit = null; // { path, input }
     let selection = emptySelection(); // { paths, anchor }，同父约束见 ADR-0001
 
@@ -962,7 +938,7 @@
       }, 2400);
     }
 
-    // 把选择状态写进 DOM（行高亮 / checkbox / 工具栏），不重建行——保住滚动位置
+    // 把选择状态写进 DOM（行高亮 / checkbox / 取消选择按钮），不重建行——保住滚动位置
     function applySelectionVisuals(rows = outlineRows(tree)) {
       const explicit = new Set(selection.paths.map(pathKey));
       const implied = new Set(impliedSelection(rows, selection).map(pathKey));
@@ -973,8 +949,7 @@
         const box = el.querySelector('.sel-box');
         if (box) box.checked = explicit.has(key) || implied.has(key);
       }
-      selectionCount.textContent = `${selection.paths.length} selected`;
-      outlineToolbar.classList.toggle('on', selection.paths.length > 0);
+      clearSelectionButton.hidden = selection.paths.length === 0;
     }
 
     // 选择变化的统一入口：状态 + 视觉 + 提示
@@ -987,6 +962,26 @@
 
     function clearSelection() {
       applySelection(emptySelection(), null);
+    }
+
+    // 批量删除（Delete 键 / 取消选择旁边没有按钮，入口就是它）：同父即可，不要求连续
+    function removeSelection() {
+      if (selection.paths.length === 0) return;
+      const result = removeNodes(tree, selection.paths);
+      if (!result.applied) {
+        flashStatus(describeOutlineReason(result.reason));
+        return;
+      }
+      tree = result.tree;
+      selection = emptySelection();
+      renderOutline({ force: true });
+      syncFromOutline();
+      const focus = result.paths[0];
+      if (focus) focusRow(focus);
+    }
+
+    function focusRow(path) {
+      outlineBody.querySelector(`.outline-row[data-path="${pathKey(path)}"]`)?.focus();
     }
 
     function buildRow(row) {
@@ -1092,31 +1087,6 @@
       if (result.paths[0]) startEdit(result.paths[0]);
     }
 
-    // 工具栏批量操作：整段缩进 / 取消缩进 / 删除（同父 + 连续，见 ADR-0001）
-    const BATCH_OPS = {
-      indent: indentNodes,
-      outdent: outdentNodes,
-      remove: removeNodes,
-    };
-
-    function runBatchOperation(act) {
-      const op = BATCH_OPS[act]; // 未知 data-act 直接忽略，绝不能落到删除
-      if (!op || selection.paths.length === 0) return;
-      const result = op(tree, selection.paths);
-      if (!result.applied) {
-        flashStatus(describeOutlineReason(result.reason));
-        return;
-      }
-      tree = result.tree;
-      // 删除后清空选择；整体移动后选中项跟着落到新位置，方便连续调整
-      selection =
-        op === removeNodes
-          ? emptySelection()
-          : { paths: result.paths, anchor: result.paths[0] ?? null };
-      renderOutline({ force: true });
-      syncFromOutline();
-    }
-
     function onEditKeydown(e, path) {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -1152,14 +1122,18 @@
       startEdit(parsePath(row.dataset.path));
     });
     outlineBody.addEventListener('keydown', (e) => {
+      if (activeEdit) return; // 行内编辑的按键由 input 处理
       const row = e.target.closest?.('.outline-row');
-      if (activeEdit || !row || e.target !== row) return; // 行内编辑的按键由 input 处理
-      if (e.key === 'Enter') {
+      if (!row) return;
+      if (e.key === 'Enter' && e.target === row) {
         e.preventDefault();
         startEdit(parsePath(row.dataset.path));
       } else if (e.key === 'Escape' && selection.paths.length > 0) {
         e.preventDefault();
         clearSelection();
+      } else if (e.key === 'Delete' && selection.paths.length > 0) {
+        e.preventDefault();
+        removeSelection();
       }
     });
 
@@ -1176,22 +1150,7 @@
       applySelection(result.selection, result.hint);
     });
 
-    // 全选 = 所有顶级节点（同父；后代跟随）
-    document.getElementById('outline-select-all').addEventListener('click', () => {
-      const result = selectAllTopLevel(outlineRows(tree));
-      if (result.selection.paths.length === 0) {
-        flashStatus('当前没有可选的节点');
-        return;
-      }
-      applySelection(result.selection, result.hint);
-    });
-
-    outlineToolbar.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-act]');
-      if (!btn) return;
-      if (btn.dataset.act === 'clear') clearSelection();
-      else runBatchOperation(btn.dataset.act);
-    });
+    clearSelectionButton.addEventListener('click', clearSelection);
 
     // ---- 防抖同步：Markdown 栏改动 ----
     editor.session.on('change', () => {
@@ -1225,7 +1184,7 @@
       getSelection: () => selection,
       applySelection,
       clearSelection,
-      runBatchOperation,
+      removeSelection,
     };
 
     applyTheme();

@@ -2,8 +2,11 @@ import { parseMarkdown, serializeMarkdown } from './intermediate-tree.mjs';
 
 /**
  * 大纲视图的结构操作：把中间树投影成可渲染的行列表，并提供
- * 行内编辑 / 新建同级 / 缩进 / 取消缩进 / 删除等纯函数操作。
+ * 行内编辑 / 新建同级 / 缩进 / 取消缩进 / 删除（含多选批量删除）等纯函数操作。
  * 全部为纯函数（返回新树），页面负责 DOM、焦点与防抖接线。
+ *
+ * 多选只服务批量拖拽（ticket 08）与批量删除：同父约束见 ADR-0001，
+ * `removeNodes` 接受任意同父选中集（不要求连续），后代随子树一起走。
  *
  * 路径（path）：从虚拟根出发的子节点下标数组，如 [0, 2, 1]。
  *
@@ -62,55 +65,45 @@ export function insertSibling(root, path) {
 }
 
 /**
- * 缩进一组同级连续节点：整体成为前一个同级节点的最后几个子级。
- * paths 必须是同一父级下、下标连续的一段（多选的同父约束，见 ADR-0001）。
+ * 缩进：成为前一个同级节点的最后一个子级（品类习惯：只向右缩一级）
  */
-export function indentNodes(root, paths) {
-  const tree = cloneTree(root);
-  const block = resolveBlock(tree, paths);
-  if (block.reason) return blocked(root, block.reason);
-  if (block.start === 0) return blocked(root, 'first-sibling');
+export function indentNode(root, path) {
+  const loc = locateNode(root, path);
+  if (!loc) return blocked(root, 'invalid-path');
+  if (loc.index === 0) return blocked(root, 'first-sibling');
 
-  const prevPath = [...block.parentPath, block.start - 1];
+  const tree = cloneTree(root);
+  const target = locateNode(tree, path);
+  const prevPath = [...path.slice(0, -1), loc.index - 1];
   const prev = parentAt(tree, prevPath);
-  const moved = block.parent.children.splice(block.start, block.count);
-  prev.children.push(...moved);
-  adjustHeadingLevels(moved, prev);
+  target.parent.children.splice(target.index, 1);
+  prev.children.push(target.node);
+  adjustHeadingLevels([target.node], prev);
   const reason = unrepresentable(root, tree, prevPath);
   if (reason) return blocked(root, reason);
-  const offset = prev.children.length - moved.length;
-  return {
-    tree,
-    applied: true,
-    paths: moved.map((_, i) => [...prevPath, offset + i]),
-    reason: null,
-  };
+  return { tree, applied: true, paths: [[...prevPath, prev.children.length - 1]], reason: null };
 }
 
-/** 取消缩进一组同级连续节点：整体移到祖父级、紧随原父级之后 */
-export function outdentNodes(root, paths) {
-  const tree = cloneTree(root);
-  const block = resolveBlock(tree, paths);
-  if (block.reason) return blocked(root, block.reason);
-  if (block.parentPath.length === 0) return blocked(root, 'already-top-level');
+/** 取消缩进：移到祖父级、紧随原父级之后 */
+export function outdentNode(root, path) {
+  if (path.length <= 1) return blocked(root, 'already-top-level');
+  const loc = locateNode(root, path);
+  if (!loc) return blocked(root, 'invalid-path');
 
-  const newParentPath = block.parentPath.slice(0, -1);
-  const newParent = parentAt(tree, newParentPath);
-  const insertIndex = locateNode(tree, block.parentPath).index + 1;
-  const moved = block.parent.children.splice(block.start, block.count);
-  newParent.children.splice(insertIndex, 0, ...moved);
-  adjustHeadingLevels(moved, newParent);
+  const newParentPath = path.slice(0, -2);
+  const tree = cloneTree(root);
+  const target = locateNode(tree, path);
+  const oldParent = locateNode(tree, path.slice(0, -1)); // { parent: 新父级, index, node: 原父级 }
+  const insertIndex = oldParent.index + 1;
+  target.parent.children.splice(target.index, 1);
+  oldParent.parent.children.splice(insertIndex, 0, target.node);
+  adjustHeadingLevels([target.node], oldParent.parent);
   const reason = unrepresentable(root, tree, newParentPath);
   if (reason) return blocked(root, reason);
-  return {
-    tree,
-    applied: true,
-    paths: moved.map((_, i) => [...newParentPath, insertIndex + i]),
-    reason: null,
-  };
+  return { tree, applied: true, paths: [[...newParentPath, insertIndex]], reason: null };
 }
 
-/** 删除一组同父节点（不要求连续）：整棵子树跟着走 */
+/** 删除一组同父节点（不要求连续）：整棵子树跟着走。多选删除的入口 */
 export function removeNodes(root, paths) {
   const tree = cloneTree(root);
   const siblings = resolveSiblings(tree, paths);
@@ -130,15 +123,11 @@ export function removeNodes(root, paths) {
   };
 }
 
-/** 单节点便捷包装（键盘操作） */
-export const indentNode = (root, path) => indentNodes(root, [path]);
-export const outdentNode = (root, path) => outdentNodes(root, [path]);
 export const removeNode = (root, path) => removeNodes(root, [path]);
 
 /** 拒绝原因 → 状态条文案 */
 const REASON_TEXT = Object.freeze({
   'first-sibling': '首个同级节点没有可缩进的目标',
-  'non-contiguous': '整体缩进/取消缩进需连续选中同一父级的节点',
   'not-siblings': '多选需同一父级（同父约束）',
   unrepresentable: '该位置无法在 Markdown 中还原，操作已取消',
   'heading-depth-limit': '标题层级超出 1–6 级，无法还原',
@@ -190,20 +179,6 @@ function resolveSiblings(tree, paths) {
     indices.push(loc.index);
   }
   return { parentPath, parent: parentAt(tree, parentPath), indices };
-}
-
-/**
- * 同父连续选中段——整体缩进/取消缩进按段移动的前提。
- * 返回 { parentPath, parent, indices, start, count } 或 { reason }。
- */
-function resolveBlock(tree, paths) {
-  const siblings = resolveSiblings(tree, paths);
-  if (siblings.reason) return siblings;
-  const { indices } = siblings;
-  for (let i = 1; i < indices.length; i += 1) {
-    if (indices[i] !== indices[i - 1] + 1) return { reason: 'non-contiguous' };
-  }
-  return { ...siblings, start: indices[0], count: indices.length };
 }
 
 /** 整块换到新父级后，标题按新父级重定级（顶层降为一级；列表项里层级不再约束） */

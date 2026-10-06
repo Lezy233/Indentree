@@ -8,9 +8,7 @@ import {
   setNodeText,
   insertSibling,
   indentNode,
-  indentNodes,
   outdentNode,
-  outdentNodes,
   removeNode,
   removeNodes,
   describeOutlineReason,
@@ -255,7 +253,6 @@ test('结构操作：缩进 / 取消缩进 / 新建后 markdown 按 kind 正确�
 test('describeOutlineReason：覆盖全部拒绝原因', () => {
   for (const reason of [
     'first-sibling',
-    'non-contiguous',
     'not-siblings',
     'unrepresentable',
     'heading-depth-limit',
@@ -272,77 +269,7 @@ test('pathKey / comparePaths：路径的规范字符串与文档顺序', () => {
   assert.deepEqual([...paths].sort(comparePaths), [[0], [0, 1], [0, 2], [1]]);
 });
 
-// ---- 批量（多选）结构操作：同父 + 连续 ----
-
-test('indentNodes：整段连续节点一起缩进到前一个同级之下', () => {
-  const tree = treeOf(['- a', '- b', '- c']);
-  const res = indentNodes(tree, [[1], [2]]);
-  assert.equal(res.applied, true);
-  assert.deepEqual(res.paths, [[0, 0], [0, 1]]);
-  assert.equal(serializeMarkdown(res.tree), ['- a', '  - b', '  - c'].join('\n'));
-  assertStable(res.tree);
-});
-
-test('indentNodes：选中父节点时整棵子树跟随', () => {
-  const tree = treeOf(['- a', '- b', '  - b1', '- c']);
-  const res = indentNodes(tree, [[1], [2]]);
-  assert.equal(res.applied, true);
-  assert.equal(serializeMarkdown(res.tree), ['- a', '  - b', '    - b1', '  - c'].join('\n'));
-  assertStable(res.tree);
-});
-
-test('indentNodes：标题块按新父级重定级', () => {
-  const tree = treeOf(['# A', '', '# B', '', '# C']);
-  const res = indentNodes(tree, [[1], [2]]);
-  assert.equal(res.applied, true);
-  assert.equal(serializeMarkdown(res.tree), ['# A', '', '## B', '', '## C'].join('\n'));
-  assertStable(res.tree);
-});
-
-test('indentNodes：跨父级多选被拒（同父约束）', () => {
-  const tree = treeOf(['- a', '  - b', '- c']);
-  const res = indentNodes(tree, [[0, 0], [1]]);
-  assert.equal(res.applied, false);
-  assert.equal(res.reason, 'not-siblings');
-  assert.equal(res.tree, tree);
-});
-
-test('indentNodes：非连续多选被拒', () => {
-  const tree = treeOf(['- a', '- b', '- c']);
-  const res = indentNodes(tree, [[0], [2]]);
-  assert.equal(res.applied, false);
-  assert.equal(res.reason, 'non-contiguous');
-});
-
-test('indentNodes：整段从第一个同级开始时无法缩进', () => {
-  const tree = treeOf(['- a', '- b']);
-  const res = indentNodes(tree, [[0], [1]]);
-  assert.equal(res.applied, false);
-  assert.equal(res.reason, 'first-sibling');
-});
-
-test('outdentNodes：整段连续节点一起取消缩进', () => {
-  const tree = treeOf(['- a', '  - b', '  - c']);
-  const res = outdentNodes(tree, [[0, 0], [0, 1]]);
-  assert.equal(res.applied, true);
-  assert.deepEqual(res.paths, [[1], [2]]);
-  assert.equal(serializeMarkdown(res.tree), ['- a', '- b', '- c'].join('\n'));
-  assertStable(res.tree);
-});
-
-test('outdentNodes：顶层多选无法取消缩进', () => {
-  const tree = treeOf(['- a', '- b']);
-  const res = outdentNodes(tree, [[0], [1]]);
-  assert.equal(res.applied, false);
-  assert.equal(res.reason, 'already-top-level');
-});
-
-test('outdentNodes：标题小节吞掉同级块时整段拒绝', () => {
-  const tree = treeOf(['# A', '', '- a', '- b']);
-  const res = outdentNodes(tree, [[0, 0], [0, 1]]);
-  assert.equal(res.applied, false);
-  assert.equal(res.reason, 'unrepresentable');
-});
+// ---- 多选批量删除：只要求同父（见 ADR-0001） ----
 
 test('removeNodes：批量删除整段并给出落点', () => {
   const tree = treeOf(['- a', '- b', '- c', '- d']);

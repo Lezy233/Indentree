@@ -21,7 +21,8 @@ _Avoid_: 类型、标签
 _Avoid_: 面板、模式（「模式」专指文本区的 Markdown/大纲切换按钮时除外）
 
 **大纲视图（Outline View）**:
-可拖拽编辑的 Notion 式大纲列表：行首多选 checkbox、浮动工具栏（缩进/取消缩进/删除）、MultiDrag 整体拖拽。
+可拖拽编辑的 Notion 式大纲列表：行首多选 checkbox（同父约束、Shift 连选）、MultiDrag 整体拖拽、Delete 批量删除。
+多选只服务「整体拖拽 / 批量删除」两个出口（见 ADR-0001 修订）。
 _Avoid_: 可拖拽文本框
 
 **树形图视图（Tree View）**:
