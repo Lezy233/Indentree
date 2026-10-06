@@ -11,6 +11,7 @@ import {
   outdentNode,
   removeNode,
   removeNodes,
+  moveNodes,
   describeOutlineReason,
   pathKey,
   comparePaths,
@@ -302,4 +303,76 @@ test('removeNodes：跨父级多选被拒', () => {
   const res = removeNodes(tree, [[0, 0], [1]]);
   assert.equal(res.applied, false);
   assert.equal(res.reason, 'not-siblings');
+});
+
+// ---- 拖拽落点：moveNodes（above / inside / below）----
+
+test('moveNodes：below 同级排序（搬到目标之后）', () => {
+  const tree = treeOf(['- a', '- b', '- c']);
+  const res = moveNodes(tree, [[0]], [2], 'below');
+  assert.equal(res.applied, true);
+  assert.deepEqual(res.paths, [[2]]);
+  assert.equal(serializeMarkdown(res.tree), ['- b', '- c', '- a'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('moveNodes：above 同级排序（搬到目标之前）', () => {
+  const tree = treeOf(['- a', '- b', '- c']);
+  const res = moveNodes(tree, [[2]], [0], 'above');
+  assert.equal(res.applied, true);
+  assert.deepEqual(res.paths, [[0]]);
+  assert.equal(serializeMarkdown(res.tree), ['- c', '- a', '- b'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('moveNodes：inside 成为目标的最后一个子级（拖入式嵌套）', () => {
+  const tree = treeOf(['- a', '- b', '- c']);
+  const res = moveNodes(tree, [[2]], [0], 'inside');
+  assert.equal(res.applied, true);
+  assert.deepEqual(res.paths, [[0, 0]]);
+  assert.equal(serializeMarkdown(res.tree), ['- a', '  - c', '- b'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('moveNodes：整组多选一起搬，相对顺序保持', () => {
+  const tree = treeOf(['- a', '- b', '- c', '- d']);
+  const res = moveNodes(tree, [[1], [2]], [0], 'above'); // b、c 搬到 a 之前
+  assert.equal(res.applied, true);
+  assert.deepEqual(res.paths, [[0], [1]]);
+  assert.equal(serializeMarkdown(res.tree), ['- b', '- c', '- a', '- d'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('moveNodes：拖到自身或后代上被拒（循环防护）', () => {
+  const tree = treeOf(['- a', '  - a1', '- b']);
+  const self = moveNodes(tree, [[0]], [0], 'inside');
+  assert.equal(self.applied, false);
+  assert.equal(self.reason, 'invalid-target');
+  const descendant = moveNodes(tree, [[0]], [0, 0], 'above');
+  assert.equal(descendant.applied, false);
+  assert.equal(descendant.reason, 'invalid-target');
+});
+
+test('moveNodes：不相邻的同父多选也整组搬（拖拽不要求连续）', () => {
+  const tree = treeOf(['- a', '- b', '- c', '- d']);
+  const res = moveNodes(tree, [[0], [2]], [3], 'below'); // a、c 搬到 d 之后
+  assert.equal(res.applied, true);
+  assert.equal(serializeMarkdown(res.tree), ['- b', '- d', '- a', '- c'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('moveNodes：跨父级拖拽（inside 别的分支）', () => {
+  const tree = treeOf(['- a', '  - a1', '- b']);
+  const res = moveNodes(tree, [[0, 0]], [1], 'inside');
+  assert.equal(res.applied, true);
+  assert.equal(serializeMarkdown(res.tree), ['- a', '- b', '  - a1'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('moveNodes：无法在 markdown 还原的落点被拒', () => {
+  // 段落不能有子节点：拖进段落必然无法还原
+  const tree = treeOf(['- a', '', '一段文字', '', '- b']);
+  const res = moveNodes(tree, [[0]], [1], 'inside');
+  assert.equal(res.applied, false);
+  assert.equal(res.reason, 'unrepresentable');
 });

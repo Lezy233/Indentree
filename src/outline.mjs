@@ -125,10 +125,60 @@ export function removeNodes(root, paths) {
 
 export const removeNode = (root, path) => removeNodes(root, [path]);
 
+/**
+ * 拖拽落点：把一组同父节点搬到 targetPath 处。
+ * zone：inside → 成为目标的最后一个子级；above / below → 成为目标的同级（前 / 后）。
+ * 落点是任一被拖节点自身或其后代时拒绝（循环防护）；其余可表达性交给 round-trip 锥体判定。
+ */
+export function moveNodes(root, paths, targetPath, zone) {
+  const tree = cloneTree(root);
+  const siblings = resolveSiblings(tree, paths);
+  if (siblings.reason) return blocked(root, siblings.reason);
+  const target = locateNode(tree, targetPath);
+  if (!target) return blocked(root, 'invalid-path');
+  if (paths.some((path) => isSelfOrAncestor(path, targetPath))) return blocked(root, 'invalid-target');
+
+  const newParent = zone === 'inside' ? target.node : target.parent;
+  // inside 是「成为目标的最后一个子级」；above / below 是插到目标前 / 后
+  const insertIndex =
+    zone === 'inside' ? null : zone === 'below' ? target.index + 1 : target.index;
+
+  // 先整段摘出（从后往前，下标不失效）
+  const moved = [];
+  for (const index of [...siblings.indices].reverse()) {
+    moved.unshift(siblings.parent.children.splice(index, 1)[0]);
+  }
+  if (insertIndex === null) {
+    newParent.children.push(...moved);
+  } else {
+    // 同一父级内搬家时，被摘掉的、位于落点之前的节点会让下标前移
+    const shift =
+      newParent === siblings.parent
+        ? siblings.indices.filter((index) => index < insertIndex).length
+        : 0;
+    const at = Math.max(0, Math.min(insertIndex - shift, newParent.children.length));
+    newParent.children.splice(at, 0, ...moved);
+  }
+  adjustHeadingLevels(moved, newParent);
+
+  // 搬家会改变下标（摘掉的节点可能排在目标之前），所以路径按节点身份反查
+  const newParentPath = pathOfNode(tree, newParent);
+  if (!newParentPath) return blocked(root, 'invalid-path');
+  const reason = unrepresentable(root, tree, newParentPath);
+  if (reason) return blocked(root, reason);
+  return {
+    tree,
+    applied: true,
+    paths: moved.map((node) => pathOfNode(tree, node)),
+    reason: null,
+  };
+}
+
 /** 拒绝原因 → 状态条文案 */
 const REASON_TEXT = Object.freeze({
   'first-sibling': '首个同级节点没有可缩进的目标',
   'not-siblings': '多选需同一父级（同父约束）',
+  'invalid-target': '不能拖到自身或自己的后代上',
   unrepresentable: '该位置无法在 Markdown 中还原，操作已取消',
   'heading-depth-limit': '标题层级超出 1–6 级，无法还原',
   'already-top-level': '已在顶层，无法取消缩进',
@@ -166,7 +216,30 @@ function parentAt(root, path) {
   return locateNode(root, path)?.node ?? null;
 }
 
-/** 同父选中集（不要求连续）：{ parentPath, parent, indices } 或 { reason } */
+/** path 是否等于 ancestor 或是它的后代（拖拽循环防护用） */
+function isSelfOrAncestor(ancestor, path) {
+  return (
+    path.length >= ancestor.length && ancestor.every((index, i) => path[i] === index)
+  );
+}
+
+/** 按节点身份反查路径（搬动/删除后下标会变，身份是稳的）；找不到返回 null */
+function pathOfNode(root, node) {
+  const walk = (parent, prefix) => {
+    for (let i = 0; i < parent.children.length; i += 1) {
+      const child = parent.children[i];
+      if (child === node) return [...prefix, i];
+      const found = walk(child, [...prefix, i]);
+      if (found) return found;
+    }
+    return null;
+  };
+  return root === node ? [] : walk(root, []);
+}
+
+/**
+ * 同父选中集（不要求连续）：{ parentPath, parent, indices } 或 { reason }
+ */
 function resolveSiblings(tree, paths) {
   if (!Array.isArray(paths) || paths.length === 0) return { reason: 'invalid-path' };
   const sorted = [...paths].sort(comparePaths);

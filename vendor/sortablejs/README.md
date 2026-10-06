@@ -24,6 +24,6 @@ npm_config_cache=/tmp/npm-cache npx --yes esbuild@0.25.0 \
 MultiDrag 插件，所以走 complete build。选型依据见 `docs/research/2026-10-04-frontend-tooling-research.md` Q3。
 
 使用：`import Sortable from './vendor/sortablejs/sortablejs.mjs'`。
-issue 07 只做 vendor：产物已用浏览器 `import()` 实测可加载、`new Sortable(el).multiDrag` 存在
-（MultiDrag 确已挂载），但页面尚未 import——避免在没有拖拽交互的版本里白下载 46 KB。
-MultiDrag 整体拖拽 + above/inside/below 三区落点的接线见 issue 08。
+页面（`index.html`）用 `Sortable.create(outlineBody, { multiDrag: true, handle: '.grip',
+forceFallback: true, … })` 提供整体拖拽，落点三区（above / inside / below）与层级语义由中间树决定
+（`onMove` 返回 false，不让 Sortable 改 DOM）；实现见 issue 08。

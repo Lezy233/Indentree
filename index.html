@@ -110,6 +110,7 @@
       border-radius: 4px;
       font-size: 13px;
       white-space: nowrap;
+      position: relative; /* 落点插入线用伪元素绝对定位 */
     }
     .outline-row:hover { background: var(--btn-hover); }
     .outline-row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
@@ -123,6 +124,41 @@
     }
     .outline-row.implied { background: color-mix(in srgb, var(--accent) 7%, transparent); }
     .outline-row.implied .sel-box { opacity: 0.55; pointer-events: none; }
+    /* 拖拽落点三区：above / below 显示插入线，inside 高亮整行（拖入式嵌套） */
+    .outline-row.drop-above::before,
+    .outline-row.drop-below::after {
+      content: '';
+      position: absolute;
+      left: 6px;
+      right: 6px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 1px;
+    }
+    .outline-row.drop-above::before { top: -1px; }
+    .outline-row.drop-below::after { bottom: -1px; }
+    .outline-row.drop-inside {
+      background: color-mix(in srgb, var(--accent) 20%, transparent);
+      box-shadow: inset 0 0 0 2px var(--accent);
+    }
+    /* 非法落点（自身 / 后代）：禁止样式，松手无效 */
+    .outline-row.drop-invalid {
+      background: var(--error-bg);
+      box-shadow: inset 0 0 0 2px var(--error-outline);
+      cursor: not-allowed;
+    }
+    .outline-row.drag-source { opacity: 0.5; }
+    /* Sortable 的 fallback 拖拽影像（整体拖拽时跟手的那一叠） */
+    .outline-drag-ghost {
+      pointer-events: none; /* 别挡住 elementFromPoint / hover 判定 */
+      background: var(--panel-bg);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+      opacity: 0.92;
+      font-size: 13px;
+      white-space: nowrap;
+    }
     .outline-row .grip {
       color: var(--muted);
       letter-spacing: -2px;
@@ -537,6 +573,7 @@
       outdentNode,
       removeNode,
       removeNodes,
+      moveNodes,
       describeOutlineReason,
       pathKey,
       parsePath,
@@ -549,6 +586,9 @@
       pruneSelection,
       describeSelectionHint,
     } from './src/outline-selection.mjs';
+    import { dropZone, dragPaths } from './src/outline-drag.mjs';
+    // SortableJS（complete build，含 MultiDrag）：整体拖拽的交互来源
+    import Sortable from './vendor/sortablejs/sortablejs.mjs';
 
     const STORAGE_KEY = 'indentree:tree-symbols';
     const THEME_KEY = 'indentree:theme';
@@ -950,6 +990,7 @@
         if (box) box.checked = explicit.has(key) || implied.has(key);
       }
       clearSelectionButton.hidden = selection.paths.length === 0;
+      syncMultiDragSelection(); // MultiDrag 的拖拽集 = 我们的选择集
     }
 
     // 选择变化的统一入口：状态 + 视觉 + 提示
@@ -1027,6 +1068,7 @@
       activeEdit = null;
       const rows = outlineRows(tree);
       selection = pruneSelection(rows, selection); // 树变了，丢掉失效的选择
+      releaseMultiDragSelection(); // 行要被替换了，先摘掉插件里的旧引用
       outlineBody.textContent = '';
       for (const row of rows) outlineBody.appendChild(buildRow(row));
       applySelectionVisuals(rows);
@@ -1082,6 +1124,8 @@
         return;
       }
       tree = result.tree;
+      // 路径是下标形式：结构一变，旧选择可能指向别的节点，宁可不选也别错选
+      selection = emptySelection();
       renderOutline({ force: true });
       syncFromOutline();
       if (result.paths[0]) startEdit(result.paths[0]);
@@ -1147,6 +1191,7 @@
     // 挂在 document 上：行 DOM 会被重渲染替换，焦点未必还落在大纲里；
     // 但正在输入（大纲行内编辑 / Markdown 栏）的按键一律不接管
     document.addEventListener('keydown', (e) => {
+      if (Sortable.active) return; // 拖拽进行中：不响应删除/取消（拖拽与删除互不冲突）
       if (selection.paths.length === 0 || isTextEntryTarget(e.target)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -1171,6 +1216,140 @@
     });
 
     clearSelectionButton.addEventListener('click', clearSelection);
+
+    // ---- 拖拽：SortableJS MultiDrag 整体拖拽 + above / inside / below 三区落点 ----
+    // 层级语义一律由中间树决定：onMove 始终返回 false（不让 Sortable 动 DOM），
+    // 落点反馈自己画，松手后在 onEnd 里把被拖的一段整体搬过去再重渲染。
+    let dragSelectionPaths = null; // 本次拖拽要搬的路径（拖选中项 = 整组）
+    let lastDropKey = null;
+
+    const rowElements = () => [...outlineBody.children];
+
+    // MultiDrag 的内部选择与我们的多选模型是两套：进拖拽前要对齐，
+    // 行被重渲染替换前要先释放（否则插件里会留下指不到元素的游离引用）
+    function releaseMultiDragSelection() {
+      rowElements().forEach((el) => Sortable.utils.deselect(el));
+    }
+
+    function syncMultiDragSelection() {
+      releaseMultiDragSelection();
+      const keys = new Set(selection.paths.map(pathKey));
+      rowElements().forEach((el) => {
+        if (keys.has(el.dataset.path)) Sortable.utils.select(el);
+      });
+    }
+
+    function clearDropFeedback() {
+      rowElements().forEach((el) =>
+        el.classList.remove('drop-above', 'drop-below', 'drop-inside', 'drop-invalid'),
+      );
+    }
+
+    function markDragSources(paths) {
+      rowElements().forEach((el) =>
+        el.classList.toggle('drag-source', paths.some((p) => pathKey(p) === el.dataset.path)),
+      );
+    }
+
+    // 拖的若是选中项，整组一起搬；否则只搬被拖的那一个
+    function dragSetFor(draggedEl) {
+      return dragPaths(outlineRows(tree), selection.paths, parsePath(draggedEl.dataset.path));
+    }
+
+    // 试算落点（不画反馈）：只有能落到中间树、且能还原成 markdown 的落点才有效
+    function computeDrop(targetEl, zone, paths = dragSelectionPaths) {
+      const targetPath = parsePath(targetEl.dataset.path);
+      return { paths, targetPath, zone, result: moveNodes(tree, paths, targetPath, zone) };
+    }
+
+    // 指针位置 → 落点（目标行 + 三区）。拖拽影像设了 pointer-events:none，
+    // elementFromPoint 能拿到它下面那一行；hover 反馈与松手判定共用这一个来源。
+    function dropAtPoint(x, y) {
+      if (x === undefined || y === undefined) return null;
+      const targetEl = document.elementFromPoint(x, y)?.closest?.('.outline-row');
+      if (!targetEl) return null;
+      return { targetEl, zone: dropZone(targetEl.getBoundingClientRect(), y) };
+    }
+
+    function pointerPoint(originalEvent) {
+      return {
+        x: originalEvent?.clientX ?? originalEvent?.touches?.[0]?.clientX,
+        y: originalEvent?.clientY ?? originalEvent?.touches?.[0]?.clientY,
+      };
+    }
+
+    // 拖动过程中持续画三区反馈（同一「目标 + 区」不重复试算）。
+    // 自己听 pointermove 而不是用 Sortable 的 onMove：后者不保证每次移动都回调，
+    // 会出现「已滑到边缘、反馈还停在中间区」的滞后
+    document.addEventListener('pointermove', (e) => {
+      if (!dragSelectionPaths) return;
+      const at = dropAtPoint(e.clientX, e.clientY);
+      if (!at) return;
+      const key = `${at.targetEl.dataset.path}|${at.zone}`;
+      if (key === lastDropKey) return;
+      lastDropKey = key;
+      const drop = computeDrop(at.targetEl, at.zone);
+      clearDropFeedback();
+      at.targetEl.classList.add(drop.result.applied ? `drop-${at.zone}` : 'drop-invalid');
+    });
+
+    // 落点结果 → 中间树（拖拽与调试钩子共用这条路径）
+    function applyDropResult({ paths, result }) {
+      if (!result.applied) {
+        flashStatus(describeOutlineReason(result.reason));
+        return false;
+      }
+      const wasSelected =
+        paths.length === selection.paths.length &&
+        paths.every((p) => selection.paths.some((s) => pathKey(s) === pathKey(p)));
+      tree = result.tree;
+      // 拖的是选中项就跟着走；拖的是别的行则清空选择（下标路径会指到别的节点）
+      selection = wasSelected
+        ? { paths: result.paths, anchor: result.paths[0] ?? null }
+        : emptySelection();
+      renderOutline({ force: true });
+      syncFromOutline();
+      return true;
+    }
+
+    // 调试/验收钩子用：按显式落点直接走一遍（不经过指针）
+    function applyDrop(paths, targetPath, zone) {
+      return applyDropResult({ paths, result: moveNodes(tree, paths, targetPath, zone) });
+    }
+
+    Sortable.create(outlineBody, {
+      draggable: '.outline-row',
+      handle: '.grip',
+      multiDrag: true,
+      selectedClass: 'md-selected', // 插件内部记账用；我们的选中态是 .selected
+      avoidImplicitDeselect: true, // 鼠标抬起不清多选：选择只由我们的模型驱动
+      animation: 120,
+      forceFallback: true, // 指针事件驱动：桌面与触屏一致
+      fallbackOnBody: true,
+      fallbackClass: 'outline-drag-ghost',
+      // 中和插件自带的点选逻辑，让 MultiDrag 的拖拽集始终等于我们的选择集
+      onTapStart: syncMultiDragSelection,
+      onSelect: syncMultiDragSelection,
+      onDeselect: syncMultiDragSelection,
+      onStart: (evt) => {
+        dragSelectionPaths = dragSetFor(evt.item);
+        lastDropKey = null;
+        clearDropFeedback();
+        markDragSources(dragSelectionPaths);
+      },
+      onMove: () => false, // 不让 Sortable 改 DOM：层级语义由中间树决定
+      onEnd: (evt) => {
+        const point = pointerPoint(evt.originalEvent);
+        const at = dropAtPoint(point.x, point.y);
+        const paths = dragSelectionPaths;
+        lastDropKey = null;
+        dragSelectionPaths = null;
+        clearDropFeedback();
+        markDragSources([]);
+        syncMultiDragSelection();
+        if (at && paths) applyDropResult(computeDrop(at.targetEl, at.zone, paths));
+      },
+    });
 
     // ---- 防抖同步：Markdown 栏改动 ----
     editor.session.on('change', () => {
@@ -1205,6 +1384,9 @@
       applySelection,
       clearSelection,
       removeSelection,
+      applyDrop, // 拖拽落点 → 中间树（验收脚本也可直接驱动）
+      moveNodes,
+      Sortable,
     };
 
     applyTheme();
