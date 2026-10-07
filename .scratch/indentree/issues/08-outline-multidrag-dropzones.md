@@ -49,3 +49,4 @@
   多选现在只有「MultiDrag 整体拖拽」与「批量删除（Delete 键）」两个出口；本票 checklist 最后一条里
   「与工具栏缩进/删除互不冲突」只剩「不与 Delete 键冲突」这一层含义。落点语义、三区反馈、循环防护不变。
   详见 `.scratch/indentree/issues/07-outline-multiselect-toolbar.md` 的修订评论与 `docs/adr/0001` 的「修订 2026-10-08」一节。
+- 2026-10-08 后续修订：本票落地后的交互调整（空白手势、选择/编辑互斥、⌘Z 撤销、拖到删除区、「＋」动作菜单）记在 `.scratch/indentree/issues/10-outline-ux-followups.md`。

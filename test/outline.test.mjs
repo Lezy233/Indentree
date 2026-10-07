@@ -11,6 +11,7 @@ import {
   outdentNode,
   removeNode,
   removeNodes,
+  appendItem,
   moveNodes,
   describeOutlineReason,
   pathKey,
@@ -375,4 +376,65 @@ test('moveNodes：无法在 markdown 还原的落点被拒', () => {
   const res = moveNodes(tree, [[0]], [1], 'inside');
   assert.equal(res.applied, false);
   assert.equal(res.reason, 'unrepresentable');
+});
+
+// ---- 末尾新建条目（规则 A：与最后一个条目同级同 kind）----
+
+test('appendItem：扁平列表里加在末尾，成为顶级同级条目', () => {
+  const tree = treeOf(['- a', '- b']);
+  const res = appendItem(tree);
+  assert.equal(res.applied, true);
+  assert.deepEqual(res.paths, [[2]]);
+  assert.equal(serializeMarkdown(res.tree), ['- a', '- b', '- 新条目'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('appendItem：文档结尾是嵌套项时加在同一层', () => {
+  const tree = treeOf(['# 题单', '', '- 第一章', '  - 1.1']);
+  const res = appendItem(tree);
+  assert.equal(res.applied, true);
+  assert.deepEqual(res.paths, [[0, 0, 1]]);
+  assert.equal(
+    serializeMarkdown(res.tree),
+    ['# 题单', '', '- 第一章', '  - 1.1', '  - 新条目'].join('\n'),
+  );
+  assertStable(res.tree);
+});
+
+test('appendItem：空文档建一个顶级列表项', () => {
+  const res = appendItem(parseMarkdown(''));
+  assert.equal(res.applied, true);
+  assert.equal(serializeMarkdown(res.tree), '- 新条目');
+  assertStable(res.tree);
+});
+
+test('appendItem：结尾是标题时沿用同一级标题', () => {
+  const tree = treeOf(['# A', '', '## B']);
+  const res = appendItem(tree);
+  assert.equal(res.applied, true);
+  assert.equal(serializeMarkdown(res.tree), ['# A', '', '## B', '', '## 新条目'].join('\n'));
+  assertStable(res.tree);
+});
+
+test('appendItem：结尾是叶子块时退回列表项', () => {
+  const tree = treeOf(['- a', '', '```js', 'const x = 1;', '```']);
+  const res = appendItem(tree);
+  assert.equal(res.applied, true);
+  assert.equal(
+    serializeMarkdown(res.tree),
+    ['- a', '', '```js', 'const x = 1;', '```', '', '- 新条目'].join('\n'),
+  );
+  assertStable(res.tree);
+});
+
+test('appendItem：结尾是列表项内的叶子块时加在列表项里', () => {
+  const tree = treeOf(['- item', '', '  ```', '  code', '  ```']);
+  const res = appendItem(tree);
+  assert.equal(res.applied, true);
+  assert.deepEqual(res.paths, [[0, 1]]);
+  assert.equal(
+    serializeMarkdown(res.tree),
+    ['- item', '', '  ```', '  code', '  ```', '', '  - 新条目'].join('\n'),
+  );
+  assertStable(res.tree);
 });

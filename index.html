@@ -83,7 +83,7 @@
       flex: none;
     }
     .col.center { flex: 1; }
-    #col-left { width: 240px; }
+    #col-left { width: 240px; position: relative; } /* ＋菜单 / 删除确认条以此为定位祖先 */
     #col-right { width: 280px; }
     .col.collapsed { width: 0 !important; border: none; }
     #ace-editor {
@@ -159,22 +159,117 @@
       font-size: 13px;
       white-space: nowrap;
     }
+    /* 「＋」动作菜单：手机上没键盘，新建 / 撤销 / 删除都从这里进 */
+    .outline-menu {
+      position: absolute;
+      top: 28px;
+      right: 8px;
+      z-index: 70;
+      display: flex;
+      flex-direction: column;
+      min-width: 150px;
+      padding: 4px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+    }
+    .outline-menu[hidden] { display: none; }
+    .outline-menu button {
+      border: none;
+      background: transparent;
+      color: var(--fg);
+      text-align: left;
+      font-size: 12px;
+      padding: 7px 8px;
+      border-radius: 5px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .outline-menu button:hover:not(:disabled) { background: var(--btn-hover); }
+    .outline-menu button:disabled { color: var(--muted); opacity: 0.55; cursor: default; }
+    /* 拖到此处删除：拖拽时才浮出的底部通栏（拇指可达） */
+    .outline-delete-zone {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+      padding: 10px 8px;
+      border-top: 1px dashed var(--border);
+      color: var(--muted);
+      font-size: 12px;
+      user-select: none;
+    }
+    .outline-delete-zone.on { display: flex; }
+    .outline-delete-zone.hot {
+      color: var(--error-fg);
+      background: var(--error-bg);
+      border-top-color: var(--error-outline);
+    }
+    /* 批量删除的二次确认（防误触）；撤销是第二层兜底 */
+    .outline-confirm {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: 8px;
+      z-index: 75;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 8px;
+      padding: 8px 10px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+      font-size: 12px;
+    }
+    .outline-confirm[hidden] { display: none; }
+    .outline-confirm #outline-confirm-text { margin-right: auto; white-space: nowrap; }
+    .outline-confirm button {
+      border: 1px solid var(--border);
+      background: var(--btn-bg);
+      color: var(--fg);
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 5px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .outline-confirm button[data-act="confirm"] {
+      border-color: var(--error-outline);
+      color: var(--error-fg);
+    }
+    .outline-confirm button:hover { background: var(--btn-hover); }
     .outline-row .grip {
       color: var(--muted);
       letter-spacing: -2px;
       cursor: grab;
       user-select: none;
+      touch-action: none; /* 手指从手柄拖拽时不要被页面滚动抢走手势 */
+    }
+    /* 手机上原生 checkbox 太小：包一层 label 把热区撑到 ~24px */
+    .outline-row .sel-hit {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+      padding: 4px;
+      margin: 0 -3px;
+      cursor: pointer;
     }
     .outline-row .sel-box {
       margin: 0;
+      width: 16px;
+      height: 16px;
       flex: none;
       cursor: pointer;
     }
     /* 「取消选择」只在有选中项时出现（多选入口只服务批量删除 / 拖拽）。
        绝对定位是为了不改变标题栏高度——选中时大纲内容不能整体偏移 */
-    #outline-clear-selection {
+    #outline-clear-selection,
+    #outline-menu-toggle {
       position: absolute;
-      right: 10px;
       top: 50%;
       transform: translateY(-50%);
       border: 1px solid var(--border);
@@ -187,7 +282,11 @@
       cursor: pointer;
       white-space: nowrap;
     }
-    #outline-clear-selection:hover { background: var(--btn-hover); }
+    #outline-clear-selection { right: 32px; }
+    #outline-menu-toggle { right: 8px; font-size: 13px; padding: 1px 6px 2px; }
+    #outline-clear-selection:hover,
+    #outline-menu-toggle:hover,
+    #outline-menu-toggle[aria-expanded="true"] { background: var(--btn-hover); }
     .outline-row[data-kind="heading"] .outline-text,
     .outline-row[data-kind="heading"] .outline-input { font-weight: 600; }
     .outline-text,
@@ -492,8 +591,20 @@
         <span class="dot"></span>
         <span>大纲</span>
         <button type="button" id="outline-clear-selection" title="取消选择（Esc）；删除选中项：Delete 或 ⌘⌫" hidden>取消选择</button>
+        <button type="button" id="outline-menu-toggle" title="新建 / 更多操作" aria-haspopup="menu" aria-expanded="false">＋</button>
+      </div>
+      <div class="outline-menu" id="outline-menu" role="menu" hidden>
+        <button type="button" role="menuitem" data-act="append">＋ 在末尾新建条目</button>
+        <button type="button" role="menuitem" data-act="undo">↶ 撤销</button>
+        <button type="button" role="menuitem" data-act="remove">🗑 删除选中项</button>
       </div>
       <div class="outline-body" id="outline-body"></div>
+      <div class="outline-delete-zone" id="outline-delete-zone"><span>🗑 拖到此处删除</span></div>
+      <div class="outline-confirm" id="outline-confirm" hidden>
+        <span id="outline-confirm-text"></span>
+        <button type="button" data-act="cancel">取消</button>
+        <button type="button" data-act="confirm">删除</button>
+      </div>
     </section>
     <div class="gutter" data-side="left"><span>⋮</span></div>
     <section class="col center" id="col-center" aria-label="Markdown 编辑器">
@@ -574,6 +685,7 @@
       removeNode,
       removeNodes,
       moveNodes,
+      appendItem,
       describeOutlineReason,
       pathKey,
       parsePath,
@@ -586,6 +698,12 @@
       pruneSelection,
       describeSelectionHint,
     } from './src/outline-selection.mjs';
+    import {
+      emptyHistory,
+      canUndo,
+      pushHistory,
+      undoHistory,
+    } from './src/outline-history.mjs';
     import { dropZone, dragPaths } from './src/outline-drag.mjs';
     // SortableJS（complete build，含 MultiDrag）：整体拖拽的交互来源
     import Sortable from './vendor/sortablejs/sortablejs.mjs';
@@ -926,6 +1044,8 @@
     function syncFromEditor() {
       try {
         tree = parseMarkdown(editor.getValue());
+        // 文本区有自己的撤销栈；留着大纲栈会「撤」回旧树、连带丢掉刚在文本区做的改动
+        history = emptyHistory();
         renderTree();
         renderOutline();
         clearError();
@@ -965,8 +1085,14 @@
     // ---- 大纲视图：按中间树渲染 + 行内编辑 + 多选（批量删除 / 拖拽入口）----
     const outlineBody = document.getElementById('outline-body');
     const clearSelectionButton = document.getElementById('outline-clear-selection');
+    const menuToggle = document.getElementById('outline-menu-toggle');
+    const outlineMenu = document.getElementById('outline-menu');
+    const deleteZone = document.getElementById('outline-delete-zone');
+    const confirmEl = document.getElementById('outline-confirm');
+    const confirmText = document.getElementById('outline-confirm-text');
     let activeEdit = null; // { path, input }
     let selection = emptySelection(); // { paths, anchor }，同父约束见 ADR-0001
+    let history = emptyHistory(); // 大纲侧改动的快照栈（Cmd+Z / 菜单「撤销」）
 
     let statusTimer = null;
     function flashStatus(message) {
@@ -997,6 +1123,7 @@
     function applySelection(next, hint) {
       selection = next;
       applySelectionVisuals();
+      updateMenuState();
       const message = describeSelectionHint(hint);
       if (message) flashStatus(message);
     }
@@ -1005,21 +1132,116 @@
       applySelection(emptySelection(), null);
     }
 
-    // 批量删除（Delete 键 / 取消选择旁边没有按钮，入口就是它）：同父即可，不要求连续
-    function removeSelection() {
-      if (selection.paths.length === 0) return;
-      const result = removeNodes(tree, selection.paths);
-      if (!result.applied) {
-        flashStatus(describeOutlineReason(result.reason));
-        return;
+    // ---- 撤销：每次大纲侧改动前留一份 { tree, selection } 快照 ----
+    // 改名 / 排序 / 缩进 / 新建 / 删除 / 拖拽落点全覆盖。
+    // 只有序列化文本真的变了才入栈——免得按了 ⌘Z「什么都没发生」
+    function recordChange(change) {
+      const before = { tree, selection };
+      change();
+      if (serializeMarkdown(tree) !== serializeMarkdown(before.tree)) {
+        history = pushHistory(history, before);
+        updateMenuState();
       }
-      tree = result.tree;
-      selection = emptySelection();
+    }
+
+    function undo() {
+      const { history: rest, snapshot } = undoHistory(history);
+      if (!snapshot) return false;
+      history = rest;
+      tree = snapshot.tree;
+      selection = snapshot.selection;
       renderOutline({ force: true });
       syncFromOutline();
-      const focus = result.paths[0];
-      if (focus) focusRow(focus);
+      updateMenuState();
+      flashStatus('已撤销');
+      return true;
     }
+
+    // ---- 二次确认（防误触）：批量删除前弹一条；撤销是第二层兜底 ----
+    let pendingConfirm = null;
+    function showConfirm(message, onConfirm) {
+      confirmText.textContent = message;
+      pendingConfirm = onConfirm;
+      confirmEl.hidden = false;
+    }
+    function hideConfirm() {
+      confirmEl.hidden = true;
+      pendingConfirm = null;
+    }
+    confirmEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const run = btn.dataset.act === 'confirm' ? pendingConfirm : null;
+      hideConfirm();
+      if (run) run();
+    });
+
+    // ---- 「＋」动作菜单：手机没键盘，新建 / 撤销 / 删除都从这里进 ----
+    function updateMenuState() {
+      outlineMenu.querySelector('button[data-act="undo"]').disabled = !canUndo(history);
+      outlineMenu.querySelector('button[data-act="remove"]').disabled = selection.paths.length === 0;
+    }
+    function openMenu(open) {
+      outlineMenu.hidden = !open;
+      menuToggle.setAttribute('aria-expanded', String(open));
+      if (open) updateMenuState();
+    }
+    menuToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openMenu(outlineMenu.hidden);
+    });
+    outlineMenu.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn || btn.disabled) return;
+      openMenu(false);
+      const act = btn.dataset.act;
+      if (act === 'append') createItemAtEnd();
+      else if (act === 'undo') undo();
+      else if (act === 'remove') deletePaths(selection.paths, { confirm: true });
+    });
+    document.addEventListener('click', (e) => {
+      if (outlineMenu.hidden) return;
+      if (e.target.closest?.('#outline-menu, #outline-menu-toggle')) return;
+      openMenu(false);
+    });
+
+    // 末尾新建条目：与最后一个条目同级同 kind，并立刻进入改名（文本全选）
+    function createItemAtEnd() {
+      recordChange(() => {
+        const result = appendItem(tree);
+        if (!result.applied) {
+          flashStatus(describeOutlineReason(result.reason));
+          return;
+        }
+        tree = result.tree;
+        selection = emptySelection(); // 进入编辑态：与选择态互斥
+        renderOutline({ force: true });
+        syncFromOutline();
+        if (result.paths[0]) startEdit(result.paths[0], { selectAll: true });
+      });
+    }
+
+    // 删除一批节点（同父即可，不要求连续）：confirm=true 且 ≥2 项时先二次确认
+    function deletePaths(paths, { confirm = false } = {}) {
+      if (!paths || paths.length === 0) return;
+      const run = () =>
+        recordChange(() => {
+          const result = removeNodes(tree, paths);
+          if (!result.applied) {
+            flashStatus(describeOutlineReason(result.reason));
+            return;
+          }
+          tree = result.tree;
+          selection = emptySelection();
+          renderOutline({ force: true });
+          syncFromOutline();
+          if (result.paths[0]) focusRow(result.paths[0]);
+        });
+      if (confirm && paths.length > 1) showConfirm(`删除 ${paths.length} 项？`, run);
+      else run();
+    }
+
+
 
     function focusRow(path) {
       outlineBody.querySelector(`.outline-row[data-path="${pathKey(path)}"]`)?.focus();
@@ -1044,7 +1266,10 @@
       box.type = 'checkbox';
       box.className = 'sel-box';
       box.setAttribute('aria-label', row.text ? `选择：${row.text.split('\n')[0]}` : '选择空节点');
-      el.appendChild(box);
+      const hit = document.createElement('label'); // label 自己转发点击给 input，热区更大
+      hit.className = 'sel-hit';
+      hit.appendChild(box);
+      el.appendChild(hit);
 
       if (row.kind === 'leaf-block') {
         const leaf = document.createElement('span');
@@ -1072,9 +1297,10 @@
       outlineBody.textContent = '';
       for (const row of rows) outlineBody.appendChild(buildRow(row));
       applySelectionVisuals(rows);
+      updateMenuState();
     }
 
-    function startEdit(path) {
+    function startEdit(path, { selectAll = false } = {}) {
       if (!Array.isArray(path)) return;
       flushEditorSync(); // 先把挂起的 Markdown 改动落地，再按最新的树定位行
       const rowEl = outlineBody.querySelector(`.outline-row[data-path="${pathKey(path)}"]`);
@@ -1093,7 +1319,8 @@
       rowEl.classList.add('editing');
       activeEdit = { path, input };
       input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
+      if (selectAll) input.select(); // 末尾新建：名称默认全选，直接输入即覆盖
+      else input.setSelectionRange(input.value.length, input.value.length);
       input.addEventListener('keydown', (e) => onEditKeydown(e, path));
       input.addEventListener('blur', finishEdit);
     }
@@ -1109,13 +1336,16 @@
 
     function finishEdit() {
       if (!activeEdit) return;
-      commitEdit();
-      renderOutline({ force: true });
-      syncFromOutline();
+      recordChange(() => {
+        commitEdit();
+        renderOutline({ force: true });
+        syncFromOutline();
+      });
     }
 
     // 结构操作结果 → 中间树 + 重渲染 + 继续编辑落点
     // （被拒绝时状态条提示，并留在原节点继续编辑）
+    // 注意：调用方负责包 recordChange，这样「改名 + 缩进」记成一步
     function applyOutlineResult(result, currentPath) {
       if (!result.applied) {
         flashStatus(describeOutlineReason(result.reason));
@@ -1134,31 +1364,63 @@
     function onEditKeydown(e, path) {
       if (e.key === 'Enter') {
         e.preventDefault();
-        commitEdit();
-        applyOutlineResult(insertSibling(tree, path), path);
+        recordChange(() => {
+          commitEdit();
+          applyOutlineResult(insertSibling(tree, path), path);
+        });
       } else if (e.key === 'Tab') {
         e.preventDefault();
-        commitEdit();
-        applyOutlineResult(e.shiftKey ? outdentNode(tree, path) : indentNode(tree, path), path);
+        recordChange(() => {
+          commitEdit();
+          applyOutlineResult(e.shiftKey ? outdentNode(tree, path) : indentNode(tree, path), path);
+        });
       } else if (e.key === 'Escape') {
         e.preventDefault();
         finishEdit();
       } else if (e.key === 'Backspace' && e.target.value === '') {
         e.preventDefault();
-        activeEdit = null; // 空节点连同未提交的空文本一起删掉
-        applyOutlineResult(removeNode(tree, path), path);
+        recordChange(() => {
+          activeEdit = null; // 空节点连同未提交的空文本一起删掉
+          applyOutlineResult(removeNode(tree, path), path);
+        });
       }
     }
 
-    // 单击行聚焦（再按 Enter 进入编辑），双击进入编辑
+    // 单击行聚焦（再按 Enter 进入编辑），双击进入编辑；
+    // 选择态下行的点击改由下面的 click 处理（二选一）
+    let pointerDown = null;
+    let pointerUp = null;
+    const MOVE_TOLERANCE = 10; // px：超过就当成拖动/滚动，不算点击（手机上翻页很常见）
+    outlineBody.addEventListener('pointerdown', (e) => {
+      pointerDown = { x: e.clientX, y: e.clientY };
+      pointerUp = null;
+    });
+    outlineBody.addEventListener('pointerup', (e) => {
+      pointerUp = { x: e.clientX, y: e.clientY };
+    });
+    /** 消费一次手势判定：位移超过阈值就当成拖动/滚动，而不是点击 */
+    function takePointerMovedFar() {
+      const moved =
+        Boolean(pointerDown && pointerUp) &&
+        Math.hypot(pointerUp.x - pointerDown.x, pointerUp.y - pointerDown.y) > MOVE_TOLERANCE;
+      pointerDown = null;
+      pointerUp = null;
+      return moved;
+    }
     outlineBody.addEventListener('mousedown', (e) => {
       const row = e.target.closest?.('.outline-row');
       if (!row || e.target.closest('.outline-input')) return;
       row.focus();
     });
+    // 双击行 = 进入编辑；双击结尾空白处 = 末尾新建条目
     outlineBody.addEventListener('dblclick', (e) => {
       const row = e.target.closest?.('.outline-row');
-      if (!row) return;
+      if (!row) {
+        createItemAtEnd();
+        return;
+      }
+      if (selection.paths.length > 0) return; // 选择态与编辑态二选一
+      if (e.target.closest('.grip, .outline-input, .sel-hit')) return;
       if (row.dataset.kind === 'leaf-block') {
         flashStatus('叶子块请在 Markdown 栏编辑');
         return;
@@ -1192,28 +1454,57 @@
     // 但正在输入（大纲行内编辑 / Markdown 栏）的按键一律不接管
     document.addEventListener('keydown', (e) => {
       if (Sortable.active) return; // 拖拽进行中：不响应删除/取消（拖拽与删除互不冲突）
-      if (selection.paths.length === 0 || isTextEntryTarget(e.target)) return;
+      if (isTextEntryTarget(e.target)) return; // 文本输入 / Ace 有自己的撤销与删除语义
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z') {
+        // 先落地挂起的 Markdown 改动：它本来就清空大纲撤销栈，
+        // 不先落地的话它会在 300ms 后把这次撤销覆盖掉（文本不丢，但撤销等于白按）
+        flushEditorSync();
+        if (undo()) e.preventDefault();
+        return;
+      }
       if (e.key === 'Escape') {
+        if (!outlineMenu.hidden || !confirmEl.hidden) {
+          e.preventDefault();
+          openMenu(false);
+          hideConfirm();
+          return;
+        }
+        if (selection.paths.length === 0) return;
         e.preventDefault();
         clearSelection();
-      } else if (isDeleteGesture(e)) {
+      } else if (selection.paths.length > 0 && isDeleteGesture(e)) {
         e.preventDefault();
-        removeSelection();
+        deletePaths(selection.paths); // 键盘删除不加确认（桌面有 ⌘Z 兜底）
       }
     });
 
-    // checkbox 点选切换；Shift 连选（同父约束 + 越界截断）
+    // 点击：checkbox 点选切换；选择态下点击行（手柄右侧任意位置）同样切换选中；
+    // 点到空白处 = 取消选择。
     outlineBody.addEventListener('click', (e) => {
+      if (takePointerMovedFar()) return; // 手机上拖动翻页 / 鼠标划选都不算点击
       const box = e.target.closest?.('.sel-box');
-      if (!box) return;
-      const row = box.closest('.outline-row');
-      const path = parsePath(row.dataset.path);
+      if (box) {
+        toggleAt(parsePath(box.closest('.outline-row').dataset.path), e.shiftKey);
+        return;
+      }
+      const row = e.target.closest?.('.outline-row');
+      if (!row) {
+        clearSelection(); // 空白处单击 = 取消选择
+        return;
+      }
+      if (e.target.closest('.grip, .outline-input, .sel-hit')) return; // 手柄只管拖拽；输入框/勾选框自己处理
+      if (e.detail >= 2) return; // 双击的第二下不再切换，保证双击 = 一次切换
+      if (selection.paths.length === 0) return; // 非选择态：行点击维持现状（聚焦 / 双击编辑）
+      toggleAt(parsePath(row.dataset.path), e.shiftKey);
+    });
+
+    function toggleAt(path, shiftKey) {
       const rows = outlineRows(tree);
-      const result = e.shiftKey
+      const result = shiftKey
         ? extendSelection(rows, selection, path)
         : toggleSelection(selection, path);
       applySelection(result.selection, result.hint);
-    });
+    }
 
     clearSelectionButton.addEventListener('click', clearSelection);
 
@@ -1266,7 +1557,9 @@
     // elementFromPoint 能拿到它下面那一行；hover 反馈与松手判定共用这一个来源。
     function dropAtPoint(x, y) {
       if (x === undefined || y === undefined) return null;
-      const targetEl = document.elementFromPoint(x, y)?.closest?.('.outline-row');
+      const el = document.elementFromPoint(x, y);
+      if (el?.closest?.('#outline-delete-zone')) return { deleteZone: true }; // 拖到此处删除
+      const targetEl = el?.closest?.('.outline-row');
       if (!targetEl) return null;
       return { targetEl, zone: dropZone(targetEl.getBoundingClientRect(), y) };
     }
@@ -1285,9 +1578,15 @@
       if (!dragSelectionPaths) return;
       const at = dropAtPoint(e.clientX, e.clientY);
       if (!at) return;
-      const key = `${at.targetEl.dataset.path}|${at.zone}`;
+      const key = at.deleteZone ? 'delete-zone' : `${at.targetEl.dataset.path}|${at.zone}`;
       if (key === lastDropKey) return;
       lastDropKey = key;
+      if (at.deleteZone) {
+        clearDropFeedback();
+        deleteZone.classList.add('hot');
+        return;
+      }
+      deleteZone.classList.remove('hot');
       const drop = computeDrop(at.targetEl, at.zone);
       clearDropFeedback();
       at.targetEl.classList.add(drop.result.applied ? `drop-${at.zone}` : 'drop-invalid');
@@ -1302,13 +1601,15 @@
       const wasSelected =
         paths.length === selection.paths.length &&
         paths.every((p) => selection.paths.some((s) => pathKey(s) === pathKey(p)));
-      tree = result.tree;
-      // 拖的是选中项就跟着走；拖的是别的行则清空选择（下标路径会指到别的节点）
-      selection = wasSelected
-        ? { paths: result.paths, anchor: result.paths[0] ?? null }
-        : emptySelection();
-      renderOutline({ force: true });
-      syncFromOutline();
+      recordChange(() => {
+        tree = result.tree;
+        // 拖的是选中项就跟着走；拖的是别的行则清空选择（下标路径会指到别的节点）
+        selection = wasSelected
+          ? { paths: result.paths, anchor: result.paths[0] ?? null }
+          : emptySelection();
+        renderOutline({ force: true });
+        syncFromOutline();
+      });
       return true;
     }
 
@@ -1336,6 +1637,7 @@
         lastDropKey = null;
         clearDropFeedback();
         markDragSources(dragSelectionPaths);
+        deleteZone.classList.add('on'); // 拖拽时才浮出的「拖到此处删除」
       },
       onMove: () => false, // 不让 Sortable 改 DOM：层级语义由中间树决定
       onEnd: (evt) => {
@@ -1346,8 +1648,14 @@
         dragSelectionPaths = null;
         clearDropFeedback();
         markDragSources([]);
+        deleteZone.classList.remove('on', 'hot');
         syncMultiDragSelection();
-        if (at && paths) applyDropResult(computeDrop(at.targetEl, at.zone, paths));
+        if (!at || !paths) return;
+        if (at.deleteZone) {
+          deletePaths(paths, { confirm: true }); // 拖进垃圾桶：≥2 项先二次确认
+          return;
+        }
+        applyDropResult(computeDrop(at.targetEl, at.zone, paths));
       },
     });
 
@@ -1383,7 +1691,10 @@
       getSelection: () => selection,
       applySelection,
       clearSelection,
-      removeSelection,
+      createItemAtEnd,
+      deletePaths,
+      canUndo: () => canUndo(history),
+      historyDepth: () => history.entries.length,
       applyDrop, // 拖拽落点 → 中间树（验收脚本也可直接驱动）
       moveNodes,
       Sortable,

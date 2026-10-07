@@ -58,9 +58,7 @@ export function insertSibling(root, path) {
   if (!loc) return blocked(root, 'invalid-path');
   const tree = cloneTree(root);
   const target = locateNode(tree, path);
-  const created = { kind: target.node.kind, text: '', children: [] };
-  if (target.node.kind === 'heading') created.level = target.node.level;
-  target.parent.children.splice(target.index + 1, 0, created);
+  target.parent.children.splice(target.index + 1, 0, makeNode(target.node.kind, '', target.node.level));
   return { tree, applied: true, paths: [[...path.slice(0, -1), target.index + 1]], reason: null };
 }
 
@@ -124,6 +122,27 @@ export function removeNodes(root, paths) {
 }
 
 export const removeNode = (root, path) => removeNodes(root, [path]);
+
+/**
+ * 末尾新建条目（规则 A）：与文档最后一个条目同级同 kind，追加在它后面——
+ * 扁平列表里就是顶级新条目；文档结尾是嵌套项时加在同一层，才能被 markdown 原样还原。
+ * 叶子块没有「名称」的概念，退回列表项。空文档则建一个顶级列表项。
+ */
+export function appendItem(root, text = '新条目') {
+  const rows = outlineRows(root);
+  const tree = cloneTree(root);
+  if (rows.length === 0) {
+    tree.children.push({ kind: 'list-item', text, children: [] });
+    return { tree, applied: true, paths: [[0]], reason: null };
+  }
+  const lastPath = rows[rows.length - 1].path;
+  const target = locateNode(tree, lastPath);
+  const kind = target.node.kind === 'leaf-block' ? 'list-item' : target.node.kind;
+  target.parent.children.splice(target.index + 1, 0, makeNode(kind, text, target.node.level));
+  const reason = unrepresentable(root, tree, lastPath.slice(0, -1));
+  if (reason) return blocked(root, reason);
+  return { tree, applied: true, paths: [[...lastPath.slice(0, -1), target.index + 1]], reason: null };
+}
 
 /**
  * 拖拽落点：把一组同父节点搬到 targetPath 处。
@@ -193,6 +212,13 @@ export function describeOutlineReason(reason) {
 const blocked = (tree, reason) => ({ tree, applied: false, paths: [], reason });
 
 const cloneTree = (node) => ({ ...node, children: node.children.map(cloneTree) });
+
+/** 造一个同级节点：标题带上 level，其余只要 kind */
+function makeNode(kind, text, level) {
+  const node = { kind, text, children: [] };
+  if (kind === 'heading') node.level = level;
+  return node;
+}
 
 /** 路径的规范字符串形式（DOM data-path / 集合键都用它） */
 export const pathKey = (path) => path.join('.');
