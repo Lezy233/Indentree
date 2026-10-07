@@ -9,7 +9,7 @@
 - [x] 验收清单逐项走查并记录结果（发现的问题在本票 Comments 追加并修复）
 - [x] 主题三态（跟随/明/暗）与 Ace 联动全链路正确
 - [x] 窄屏单栏可完成基本互转操作；宽屏三栏三视图同步无脏刷新
-- [ ] 发布源分支确定（main vs rewrite），站点部署至 github.io 并在线上验证核心流程 —— **待用户拍板分支 + 推送**
+- [x] 发布源分支确定（main vs rewrite），站点部署至 github.io 并在线上验证核心流程
 - [x] README 功能说明更新
 
 ## Comments
@@ -52,5 +52,13 @@
     本地 `main` 是 `rewrite` 的祖先（可快进），`rewrite` 领先 21 个 commit。仓库里没有 CNAME，
     也没有 Pages 配置文件（源分支在 GitHub 仓库设置里）。
   - **README 已更新**：功能、快捷键表、本地运行、开发结构、已知边界；替换掉原来的空占位段落。
-  - **待用户拍板**：发布源分支（`main` 快进到 `rewrite` 后推送 / 改 GitHub Pages 源为 `rewrite` / 只推 `rewrite` 预览）。
-    推送属于对外动作，未获确认前不执行；确认后我再推送并用线上 URL 复跑核心流程。
+  - **发布（2026-10-08，用户拍板走方案 A）**：发布源分支确定为 **`main`**——`git branch -f main rewrite`
+    快进（`main` 原本就是 `rewrite` 的祖先，纯快进、无重写历史）后 `git push origin main`
+    （`25f0a57..915a932`）。github.io 仍服务同一 URL `https://lezy233.github.io/Indentree/`，
+    站点从 v0 换成新版。
+  - **线上确认**：首页 200（63927 字节，旧版约 2.7KB），新版标记（`outline-menu-toggle`、
+    `./src/outline-history.mjs`、`./vendor/sortablejs`、「拖到此处删除」）全部命中，旧版标记 `js/app.js` 已消失；
+    关键资源 `src/*.mjs`、`vendor/ace/ace.js`、`vendor/sortablejs/sortablejs.mjs` 均 200。
+    交互流程的线上复跑按用户要求跳过（由用户自行在浏览器确认）。
+  - 发布前检查：站点文件不含 Liquid 语法（`{{` / `{%`）也没有下划线开头的路径，
+    因此 Pages 默认的 Jekyll 构建不会改动或吞掉资源，无需 `.nojekyll`。
